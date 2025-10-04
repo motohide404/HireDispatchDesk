@@ -6,3 +6,5 @@ export default function VehicleDispatchBoardMock() {
     </div>
   );
 }
+
+// TODO: wire mock to real data
