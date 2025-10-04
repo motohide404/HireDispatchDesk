@@ -11,3 +11,18 @@ body {
   margin: 0;
   min-height: 100vh;
 }
+
+@keyframes blink-soft {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.35);
+    background-color: rgba(254, 243, 199, 0.95);
+  }
+  100% {
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0);
+    background-color: rgba(254, 243, 199, 0.6);
+  }
+}
+
+.blink3 {
+  animation: blink-soft 1.2s ease-in-out infinite alternate;
+}
