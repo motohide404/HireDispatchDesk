@@ -163,7 +163,7 @@ export default function VehicleDispatchBoardMock() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerItem, setDrawerItem] = useState<any>(null);
   const [selected, setSelected] = useState<{ type: "booking" | "duty"; id: number | string } | null>(null);
-  const [bookings, setBookings] = useState(BOOKINGS);
+  const [bookings, setBookings] = useState<any[]>(BOOKINGS);
   const [appDuties, setAppDuties] = useState(APP_DUTIES_INIT);
   const [jobPool, setJobPool] = useState(UNASSIGNED_JOBS);
   const [flashUnassignId, setFlashUnassignId] = useState<number | null>(null);
