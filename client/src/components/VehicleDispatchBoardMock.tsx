@@ -44,6 +44,8 @@ type BoardBooking = {
   note?: string;
 };
 
+const isAppJob = (booking: BoardBooking | undefined | null) => booking?.client?.type === "app";
+
 const BOOKINGS: BoardBooking[] = [
   { id: 201, vehicleId: 11, driverId: 1, client: { type: "個人", name: "山田様" }, title: "羽田→帝国ホテル", start: "2025-10-03T09:30:00+09:00", end: "2025-10-03T11:00:00+09:00", status: "ok" },
   { id: 202, vehicleId: 11, driverId: null, client: { type: "ホテル", name: "帝国ホテル" }, title: "丸の内→品川(待機)", start: "2025-10-03T12:00:00+09:00", end: "2025-10-03T15:00:00+09:00", status: "warn", note: "ドライバー未割当" },
@@ -571,9 +573,20 @@ export default function VehicleDispatchBoardMock() {
                         viewDate={dateStr}
                         onClick={() => openDrawer({ type: "booking", data: b, vehicle: v })}
                         isSelected={selected?.type === "booking" && selected?.id === b.id}
+                        resizable={isAppJob(b)}
                         onDriverDrop={(bookingId: number, driverId: number) => {
                           const cur = bookings.find((x) => x.id === bookingId);
                           if (!cur) return;
+                          if (cur.driverId === driverId) return;
+                          if (cur.driverId != null && cur.driverId !== driverId) {
+                            const currentDriverName = driverMap.get(cur.driverId)?.name ?? "現在ドライバー";
+                            const incomingDriverName = driverMap.get(driverId)?.name ?? "新ドライバー";
+                            const ok =
+                              typeof window === "undefined"
+                                ? true
+                                : window.confirm(`現在: ${currentDriverName} → 新: ${incomingDriverName} に変更しますか？`);
+                            if (!ok) return;
+                          }
                           const cand: BoardBooking = { ...cur, driverId };
                           if (hasDriverTimeConflict(bookings, cand)) {
                             alert("同一ドライバーの時間重複のため割当できません");
@@ -783,7 +796,8 @@ function BookingBlock({
   onDragStart,
   flashUnassign,
   onMoveToVehicle,
-  onResize
+  onResize,
+  resizable = true
 }: {
   booking: BoardBooking;
   pxPerMin: number;
@@ -796,6 +810,7 @@ function BookingBlock({
   flashUnassign?: boolean;
   onMoveToVehicle: (bookingId: number, fromVehicleId: number, destVehicleId: number, originalDriverId: number | null) => void;
   onResize: (bookingId: number, nextStart: string, nextEnd: string) => boolean;
+  resizable?: boolean;
 }) {
   const [allowDrag, setAllowDrag] = useState(true);
   const [draftRange, setDraftRange] = useState<DraftRange | null>(null);
@@ -812,6 +827,14 @@ function BookingBlock({
     setDraftRange(null);
     setAllowDrag(true);
   }, [booking.start, booking.end]);
+
+  useEffect(() => {
+    if (!resizable) {
+      resizeStateRef.current = null;
+      applyDraftRange(null);
+      setAllowDrag(true);
+    }
+  }, [resizable]);
 
   const displayStart = draftRange?.start ?? booking.start;
   const displayEnd = draftRange?.end ?? booking.end;
@@ -908,6 +931,7 @@ function BookingBlock({
   };
 
   const beginResize = (side: "start" | "end") => (e: any) => {
+    if (!resizable) return;
     e.stopPropagation();
     e.preventDefault();
     setAllowDrag(false);
@@ -929,6 +953,7 @@ function BookingBlock({
   };
 
   const onResizeMove = (e: any) => {
+    if (!resizable) return;
     const state = resizeStateRef.current;
     if (!state || e.pointerId !== state.pointerId) return;
     e.stopPropagation();
@@ -960,6 +985,7 @@ function BookingBlock({
   };
 
   const finishResize = (e: any, applyChange: boolean) => {
+    if (!resizable) return;
     const state = resizeStateRef.current;
     if (!state || e.pointerId !== state.pointerId) return;
     e.stopPropagation();
@@ -992,7 +1018,7 @@ function BookingBlock({
 
   return (
     <div
-      className={`absolute top-2 h-12 ${color} text-white text-[11px] rounded-lg px-2 py-1 shadow ring-2 ${ring} cursor-pointer ${isSelected ? "outline outline-2 outline-blue-500" : ""} ${over ? "ring-4 ring-blue-300" : ""}`}
+      className={`absolute top-2 h-12 ${color} text-white text-[11px] rounded-lg px-2 py-1 shadow ring-2 ${ring} ${resizable ? "cursor-pointer" : "cursor-default"} ${isSelected ? "outline outline-2 outline-blue-500" : ""} ${over ? "ring-4 ring-blue-300" : ""}`}
       style={{ left, width }}
       title={booking.title}
       onClick={onCardClick}
@@ -1025,30 +1051,34 @@ function BookingBlock({
         <div className="truncate">{booking.client?.name}</div>
       </div>
       {clipR && <EdgeFlag pos="right" />}
-      <div
-        className="absolute inset-y-1 left-0 w-2 cursor-ew-resize flex items-center justify-center z-10"
-        onPointerDown={beginResize("start")}
-        onPointerMove={onResizeMove}
-        onPointerUp={onResizePointerUp}
-        onPointerCancel={onResizePointerCancel}
-        onContextMenu={(e) => e.preventDefault()}
-        role="presentation"
-        title="開始時間を調整"
-      >
-        <div className="h-6 w-1 rounded bg-white/80 border border-white/60 shadow" />
-      </div>
-      <div
-        className="absolute inset-y-1 right-0 w-2 cursor-ew-resize flex items-center justify-center z-10"
-        onPointerDown={beginResize("end")}
-        onPointerMove={onResizeMove}
-        onPointerUp={onResizePointerUp}
-        onPointerCancel={onResizePointerCancel}
-        onContextMenu={(e) => e.preventDefault()}
-        role="presentation"
-        title="終了時間を調整"
-      >
-        <div className="h-6 w-1 rounded bg-white/80 border border-white/60 shadow" />
-      </div>
+      {resizable && (
+        <>
+          <div
+            className="absolute inset-y-1 left-0 w-2 cursor-ew-resize flex items-center justify-center z-10"
+            onPointerDown={beginResize("start")}
+            onPointerMove={onResizeMove}
+            onPointerUp={onResizePointerUp}
+            onPointerCancel={onResizePointerCancel}
+            onContextMenu={(e) => e.preventDefault()}
+            role="presentation"
+            title="開始時間を調整"
+          >
+            <div className="h-6 w-1 rounded bg-white/80 border border-white/60 shadow" />
+          </div>
+          <div
+            className="absolute inset-y-1 right-0 w-2 cursor-ew-resize flex items-center justify-center z-10"
+            onPointerDown={beginResize("end")}
+            onPointerMove={onResizeMove}
+            onPointerUp={onResizePointerUp}
+            onPointerCancel={onResizePointerCancel}
+            onContextMenu={(e) => e.preventDefault()}
+            role="presentation"
+            title="終了時間を調整"
+          >
+            <div className="h-6 w-1 rounded bg-white/80 border border-white/60 shadow" />
+          </div>
+        </>
+      )}
     </div>
   );
 }
