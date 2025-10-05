@@ -8,6 +8,8 @@ const DRIVER_POOL_WIDTH_MAX = 360;
 const DEFAULT_PX_PER_MIN = 2;
 const MIN_PX_PER_MIN = 0.3;
 const BUFFER_MINUTES = 15;
+const RESIZE_STEP_MINUTES = 5;
+const MIN_BOOKING_DURATION_MINUTES = 15;
 const LP_MS = 60;
 
 const VEHICLES = [
@@ -30,7 +32,19 @@ const APP_DUTIES_INIT = [
   { id: "A3", vehicleId: 12, driverId: 4, service: "nearMe", start: "2025-10-03T20:00:00+09:00", end: "2025-10-03T23:30:00+09:00" }
 ];
 
-const BOOKINGS = [
+type BoardBooking = {
+  id: number;
+  vehicleId: number;
+  driverId: number | null;
+  client: { type: string; name: string };
+  title: string;
+  start: string;
+  end: string;
+  status: string;
+  note?: string;
+};
+
+const BOOKINGS: BoardBooking[] = [
   { id: 201, vehicleId: 11, driverId: 1, client: { type: "個人", name: "山田様" }, title: "羽田→帝国ホテル", start: "2025-10-03T09:30:00+09:00", end: "2025-10-03T11:00:00+09:00", status: "ok" },
   { id: 202, vehicleId: 11, driverId: null, client: { type: "ホテル", name: "帝国ホテル" }, title: "丸の内→品川(待機)", start: "2025-10-03T12:00:00+09:00", end: "2025-10-03T15:00:00+09:00", status: "warn", note: "ドライバー未割当" },
   { id: 203, vehicleId: 12, driverId: 2, client: { type: "代理店", name: "ABCトラベル" }, title: "成田→都内(ワゴン)", start: "2025-10-03T10:00:00+09:00", end: "2025-10-03T13:30:00+09:00", status: "ok" },
@@ -91,34 +105,39 @@ export function crossWidth(startMin: number, endMin: number, pxPerMin: number) {
   return { left, width };
 }
 
-function bookingToJob(b: any): any {
+function bookingToJob(b: BoardBooking) {
   const vehicle = VEHICLES.find((v) => v.id === b.vehicleId);
   return { id: `J${b.id}`, title: b.title, client: b.client, start: b.start, end: b.end, preferClass: vehicle?.class || "sedan" };
 }
 
-function applyBookingMove(b: any, destVehicleId: number, originVehicleId?: number | null, originalDriverId?: number | null) {
+function applyBookingMove(
+  b: BoardBooking,
+  destVehicleId: number,
+  originVehicleId?: number | null,
+  originalDriverId?: number | null
+): BoardBooking {
   const origin = originVehicleId == null || Number.isNaN(originVehicleId) ? b.vehicleId : originVehicleId;
   const crossed = destVehicleId !== origin;
   return { ...b, vehicleId: destVehicleId, driverId: crossed ? null : originalDriverId ?? b.driverId ?? null };
 }
 
-function isSameVehicleOverlap(all: any[], cand: any): boolean {
+function isSameVehicleOverlap(all: BoardBooking[], cand: BoardBooking): boolean {
   return all.some((o) => o.id !== cand.id && o.vehicleId === cand.vehicleId && overlap(cand.start, cand.end, o.start, o.end));
 }
-function hasDriverTimeConflict(all: any[], cand: any): boolean {
+function hasDriverTimeConflict(all: BoardBooking[], cand: BoardBooking): boolean {
   if (cand.driverId == null) return false;
   return all.some((o) => o.id !== cand.id && o.driverId === cand.driverId && overlap(cand.start, cand.end, o.start, o.end));
 }
 function minutesBetween(aEndISO: string, bStartISO: string) {
   return Math.round((new Date(bStartISO).getTime() - new Date(aEndISO).getTime()) / 60000);
 }
-function bufferWarn(all: any[], cand: any): boolean {
+function bufferWarn(all: BoardBooking[], cand: BoardBooking): boolean {
   const same = all
     .filter((o) => o.id !== cand.id && o.vehicleId === cand.vehicleId)
     .sort((x, y) => new Date(x.start).getTime() - new Date(y.start).getTime());
   const sT = new Date(cand.start).getTime();
-  let prev: any = null,
-    next: any = null;
+  let prev: BoardBooking | null = null,
+    next: BoardBooking | null = null;
   for (const o of same) {
     const t = new Date(o.start).getTime();
     if (t <= sT) prev = o;
@@ -131,16 +150,16 @@ function bufferWarn(all: any[], cand: any): boolean {
   const nextGapOk = !next || minutesBetween(cand.end, next.start) >= BUFFER_MINUTES;
   return !(prevGapOk && nextGapOk);
 }
-function violatesAppDuty(cand: any, duties: any[]): boolean {
+function violatesAppDuty(cand: BoardBooking, duties: any[]): boolean {
   return duties.some((d) => d.vehicleId === cand.vehicleId && overlap(cand.start, cand.end, d.start, d.end));
 }
-function dutyConflictsWithBookings(bookings: any[], duty: any): boolean {
+function dutyConflictsWithBookings(bookings: BoardBooking[], duty: any): boolean {
   return bookings.some((b) => b.vehicleId === duty.vehicleId && overlap(duty.start, duty.end, b.start, b.end));
 }
 function vehicleIdAtPoint(clientX: number, clientY: number): number | null {
   let el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
   while (el) {
-    const v = (el as any).dataset?.vehicleId;
+    const v = el.dataset?.vehicleId;
     if (v != null) {
       const id = Number(v);
       if (!Number.isNaN(id)) return id;
@@ -163,7 +182,7 @@ export default function VehicleDispatchBoardMock() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerItem, setDrawerItem] = useState<any>(null);
   const [selected, setSelected] = useState<{ type: "booking" | "duty"; id: number | string } | null>(null);
-  const [bookings, setBookings] = useState(BOOKINGS);
+  const [bookings, setBookings] = useState<BoardBooking[]>(BOOKINGS);
   const [appDuties, setAppDuties] = useState(APP_DUTIES_INIT);
   const [jobPool, setJobPool] = useState(UNASSIGNED_JOBS);
   const [flashUnassignId, setFlashUnassignId] = useState<number | null>(null);
@@ -200,7 +219,7 @@ export default function VehicleDispatchBoardMock() {
 
   const CONTENT_WIDTH = Math.round(24 * 60 * pxPerMin);
   const bookingsByVehicle = useMemo(() => {
-    const map = new Map<number, any[]>();
+    const map = new Map<number, BoardBooking[]>();
     VEHICLES.forEach((v) => map.set(v.id, []));
     bookings.forEach((b) => {
       if (!map.has(b.vehicleId)) map.set(b.vehicleId, []);
@@ -275,6 +294,44 @@ export default function VehicleDispatchBoardMock() {
     }
   };
 
+  const handleResizeBooking = (bookingId: number, nextStartIso: string, nextEndIso: string) => {
+    let applied = false;
+    setBookings((prev) => {
+      const cur = prev.find((x) => x.id === bookingId);
+      if (!cur) return prev;
+      const startDate = new Date(nextStartIso);
+      const endDate = new Date(nextEndIso);
+      if (endDate.getTime() <= startDate.getTime()) {
+        return prev;
+      }
+      const minDurationMs = MIN_BOOKING_DURATION_MINUTES * 60000;
+      if (endDate.getTime() - startDate.getTime() < minDurationMs) {
+        alert(`予約は最低${MIN_BOOKING_DURATION_MINUTES}分必要です`);
+        return prev;
+      }
+      const cand: BoardBooking = { ...cur, start: nextStartIso, end: nextEndIso };
+      const others = prev.filter((x) => x.id !== bookingId);
+      if (isSameVehicleOverlap(others, cand)) {
+        alert("同じ車両の他予約と時間が重複しています");
+        return prev;
+      }
+      if (violatesAppDuty(cand, appDuties)) {
+        alert("アプリ稼働と重複するため時間調整できません");
+        return prev;
+      }
+      if (hasDriverTimeConflict(prev, cand)) {
+        alert("割り当てドライバーの他予約と重複しています");
+        return prev;
+      }
+      const warn = bufferWarn(prev, cand);
+      const status = cand.status === "hard" ? "hard" : warn ? "warn" : "ok";
+      applied = true;
+      const updated: BoardBooking = { ...cand, status };
+      return prev.map((x) => (x.id === bookingId ? updated : x));
+    });
+    return applied;
+  };
+
   const moveDutyByPointer = (dutyId: string, fromVehicleId: number, destVehicleId: number) => {
     setAppDuties((prev) => {
       const cur = prev.find((x) => x.id === dutyId);
@@ -325,7 +382,7 @@ export default function VehicleDispatchBoardMock() {
     if (!job) return;
     const start = new Date(job.start);
     const end = new Date(job.end);
-    const newBooking = {
+    const newBooking: BoardBooking = {
       id: ++bookingIdRef.current,
       vehicleId,
       driverId: null,
@@ -335,7 +392,7 @@ export default function VehicleDispatchBoardMock() {
       end: toJstIso(end),
       status: "warn",
       note: "ドライバー未割当（ジョブから配置：カード時刻にスナップ）"
-    } as any;
+    };
     if (isSameVehicleOverlap(bookings, newBooking)) {
       alert("時間重複のため配置できません");
       return;
@@ -506,7 +563,7 @@ export default function VehicleDispatchBoardMock() {
                         onMoveDutyToVehicle={(dutyId, fromVehicleId, destVehicleId) => moveDutyByPointer(dutyId, fromVehicleId, destVehicleId)}
                       />
                     ))}
-                    {(bookingsByVehicle.get(v.id) || []).map((b: any) => (
+                    {(bookingsByVehicle.get(v.id) || []).map((b: BoardBooking) => (
                       <BookingBlock
                         key={b.id}
                         booking={b}
@@ -517,7 +574,7 @@ export default function VehicleDispatchBoardMock() {
                         onDriverDrop={(bookingId: number, driverId: number) => {
                           const cur = bookings.find((x) => x.id === bookingId);
                           if (!cur) return;
-                          const cand = { ...cur, driverId } as any;
+                          const cand: BoardBooking = { ...cur, driverId };
                           if (hasDriverTimeConflict(bookings, cand)) {
                             alert("同一ドライバーの時間重複のため割当できません");
                             return;
@@ -537,6 +594,7 @@ export default function VehicleDispatchBoardMock() {
                           e.dataTransfer.setData("text/plain", String(b.id));
                         }}
                         flashUnassign={flashUnassignId === b.id}
+                        onResize={(bookingId, nextStart, nextEnd) => handleResizeBooking(bookingId, nextStart, nextEnd)}
                       />
                     ))}
 
@@ -704,8 +762,60 @@ function AppDutyBlock({ duty, pxPerMin, viewDate, onClick, isSelected, onMoveDut
   );
 }
 
-function BookingBlock({ booking, pxPerMin, viewDate, onClick, isSelected, onDriverDrop, draggable, onDragStart, flashUnassign, onMoveToVehicle }: { booking: any; pxPerMin: number; viewDate: string; onClick: () => void; isSelected?: boolean; onDriverDrop: (bookingId: number, driverId: number) => void; draggable?: boolean; onDragStart?: (e: any) => void; flashUnassign?: boolean; onMoveToVehicle: (bookingId: number, fromVehicleId: number, destVehicleId: number, originalDriverId: number | null) => void }) {
-  const { left, width, clipL, clipR, overnight } = rangeForDay(booking.start, booking.end, viewDate, pxPerMin);
+type DraftRange = { start: string; end: string };
+type ResizeState = {
+  side: "start" | "end";
+  pointerId: number;
+  startX: number;
+  baseStart: Date;
+  baseEnd: Date;
+  lastStep: number;
+};
+
+function BookingBlock({
+  booking,
+  pxPerMin,
+  viewDate,
+  onClick,
+  isSelected,
+  onDriverDrop,
+  draggable,
+  onDragStart,
+  flashUnassign,
+  onMoveToVehicle,
+  onResize
+}: {
+  booking: BoardBooking;
+  pxPerMin: number;
+  viewDate: string;
+  onClick: () => void;
+  isSelected?: boolean;
+  onDriverDrop: (bookingId: number, driverId: number) => void;
+  draggable?: boolean;
+  onDragStart?: (e: any) => void;
+  flashUnassign?: boolean;
+  onMoveToVehicle: (bookingId: number, fromVehicleId: number, destVehicleId: number, originalDriverId: number | null) => void;
+  onResize: (bookingId: number, nextStart: string, nextEnd: string) => boolean;
+}) {
+  const [allowDrag, setAllowDrag] = useState(true);
+  const [draftRange, setDraftRange] = useState<DraftRange | null>(null);
+  const draftRangeRef = useRef<DraftRange | null>(null);
+  const resizeStateRef = useRef<ResizeState | null>(null);
+
+  const applyDraftRange = (next: DraftRange | null) => {
+    draftRangeRef.current = next;
+    setDraftRange(next);
+  };
+
+  useEffect(() => {
+    draftRangeRef.current = null;
+    setDraftRange(null);
+    setAllowDrag(true);
+  }, [booking.start, booking.end]);
+
+  const displayStart = draftRange?.start ?? booking.start;
+  const displayEnd = draftRange?.end ?? booking.end;
+  const { left, width, clipL, clipR, overnight } = rangeForDay(displayStart, displayEnd, viewDate, pxPerMin);
   if (width <= 0) return null;
   const color = booking.status === "ok" ? "bg-green-500/80" : booking.status === "warn" ? "bg-yellow-500/80" : "bg-red-500/80";
   const ring = booking.status === "ok" ? "ring-green-400" : booking.status === "warn" ? "ring-yellow-400" : "ring-red-400";
@@ -797,6 +907,89 @@ function BookingBlock({ booking, pxPerMin, viewDate, onClick, isSelected, onDriv
     pId.current = null;
   };
 
+  const beginResize = (side: "start" | "end") => (e: any) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setAllowDrag(false);
+    const target = e.currentTarget as HTMLElement;
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch (err) {
+      /* ignore */
+    }
+    resizeStateRef.current = {
+      side,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      baseStart: new Date(booking.start),
+      baseEnd: new Date(booking.end),
+      lastStep: 0
+    };
+    applyDraftRange({ start: booking.start, end: booking.end });
+  };
+
+  const onResizeMove = (e: any) => {
+    const state = resizeStateRef.current;
+    if (!state || e.pointerId !== state.pointerId) return;
+    e.stopPropagation();
+    const deltaPx = e.clientX - state.startX;
+    if (!pxPerMin) return;
+    const deltaMinutes = deltaPx / pxPerMin;
+    const step = Math.round(deltaMinutes / RESIZE_STEP_MINUTES) * RESIZE_STEP_MINUTES;
+    if (step === state.lastStep) return;
+    state.lastStep = step;
+    let nextStart = new Date(state.baseStart);
+    let nextEnd = new Date(state.baseEnd);
+    if (state.side === "start") {
+      nextStart = new Date(state.baseStart.getTime() + step * 60000);
+      const maxStart = state.baseEnd.getTime() - MIN_BOOKING_DURATION_MINUTES * 60000;
+      if (nextStart.getTime() > maxStart) {
+        nextStart = new Date(maxStart);
+      }
+    } else {
+      nextEnd = new Date(state.baseEnd.getTime() + step * 60000);
+      const minEnd = state.baseStart.getTime() + MIN_BOOKING_DURATION_MINUTES * 60000;
+      if (nextEnd.getTime() < minEnd) {
+        nextEnd = new Date(minEnd);
+      }
+    }
+    const draft: DraftRange = { start: toJstIso(nextStart), end: toJstIso(nextEnd) };
+    const prev = draftRangeRef.current;
+    if (prev && prev.start === draft.start && prev.end === draft.end) return;
+    applyDraftRange(draft);
+  };
+
+  const finishResize = (e: any, applyChange: boolean) => {
+    const state = resizeStateRef.current;
+    if (!state || e.pointerId !== state.pointerId) return;
+    e.stopPropagation();
+    e.preventDefault();
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(state.pointerId);
+    } catch (err) {
+      /* ignore */
+    }
+    resizeStateRef.current = null;
+    setAllowDrag(true);
+    const finalRange = draftRangeRef.current;
+    if (!applyChange || !finalRange) {
+      applyDraftRange(null);
+      return;
+    }
+    const changed = finalRange.start !== booking.start || finalRange.end !== booking.end;
+    if (!changed) {
+      applyDraftRange(null);
+      return;
+    }
+    const ok = onResize(booking.id, finalRange.start, finalRange.end);
+    if (!ok) {
+      applyDraftRange(null);
+    }
+  };
+
+  const onResizePointerUp = (e: any) => finishResize(e, true);
+  const onResizePointerCancel = (e: any) => finishResize(e, false);
+
   return (
     <div
       className={`absolute top-2 h-12 ${color} text-white text-[11px] rounded-lg px-2 py-1 shadow ring-2 ${ring} cursor-pointer ${isSelected ? "outline outline-2 outline-blue-500" : ""} ${over ? "ring-4 ring-blue-300" : ""}`}
@@ -812,7 +1005,7 @@ function BookingBlock({ booking, pxPerMin, viewDate, onClick, isSelected, onDriv
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      draggable={draggable}
+      draggable={draggable && allowDrag}
       onDragStart={onDragStart}
     >
       {clipL && <EdgeFlag pos="left" />}
@@ -826,12 +1019,36 @@ function BookingBlock({ booking, pxPerMin, viewDate, onClick, isSelected, onDriv
       </div>
       <div className="flex items-center justify-between gap-2 opacity-95">
         <div className="truncate">
-          {fmt(booking.start)} - {fmt(booking.end)}
+          {fmt(displayStart)} - {fmt(displayEnd)}
           {overnight ? "（→翌）" : ""}
         </div>
         <div className="truncate">{booking.client?.name}</div>
       </div>
       {clipR && <EdgeFlag pos="right" />}
+      <div
+        className="absolute inset-y-1 left-0 w-2 cursor-ew-resize flex items-center justify-center z-10"
+        onPointerDown={beginResize("start")}
+        onPointerMove={onResizeMove}
+        onPointerUp={onResizePointerUp}
+        onPointerCancel={onResizePointerCancel}
+        onContextMenu={(e) => e.preventDefault()}
+        role="presentation"
+        title="開始時間を調整"
+      >
+        <div className="h-6 w-1 rounded bg-white/80 border border-white/60 shadow" />
+      </div>
+      <div
+        className="absolute inset-y-1 right-0 w-2 cursor-ew-resize flex items-center justify-center z-10"
+        onPointerDown={beginResize("end")}
+        onPointerMove={onResizeMove}
+        onPointerUp={onResizePointerUp}
+        onPointerCancel={onResizePointerCancel}
+        onContextMenu={(e) => e.preventDefault()}
+        role="presentation"
+        title="終了時間を調整"
+      >
+        <div className="h-6 w-1 rounded bg-white/80 border border-white/60 shadow" />
+      </div>
     </div>
   );
 }

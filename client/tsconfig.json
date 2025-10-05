@@ -18,6 +18,5 @@
       "react-beautiful-dnd": ["./src/lib/reactBeautifulDnd"]
     }
   },
-  "include": ["src"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "include": ["src"]
 }
