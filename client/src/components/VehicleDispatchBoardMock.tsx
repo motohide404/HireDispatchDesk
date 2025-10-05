@@ -352,6 +352,43 @@ export default function VehicleDispatchBoardMock() {
     });
   };
 
+  const handleResizeDuty = (dutyId: string, nextStartIso: string, nextEndIso: string) => {
+    let applied = false;
+    const snapToStep = (iso: string) => {
+      const date = new Date(iso);
+      const minutes = Math.round(date.getTime() / 60000);
+      const snapped = Math.round(minutes / RESIZE_STEP_MINUTES) * RESIZE_STEP_MINUTES;
+      return new Date(snapped * 60000);
+    };
+    setAppDuties((prev) => {
+      const cur = prev.find((x) => x.id === dutyId);
+      if (!cur) return prev;
+      const snappedStart = snapToStep(nextStartIso);
+      const snappedEnd = snapToStep(nextEndIso);
+      if (snappedEnd.getTime() <= snappedStart.getTime()) {
+        return prev;
+      }
+      const minDurationMs = MIN_BOOKING_DURATION_MINUTES * 60000;
+      if (snappedEnd.getTime() - snappedStart.getTime() < minDurationMs) {
+        alert(`アプリ稼働は最低${MIN_BOOKING_DURATION_MINUTES}分必要です`);
+        return prev;
+      }
+      const cand = { ...cur, start: toJstIso(snappedStart), end: toJstIso(snappedEnd) };
+      const others = prev.filter((x) => x.id !== dutyId);
+      if (others.some((o) => o.vehicleId === cand.vehicleId && overlap(cand.start, cand.end, o.start, o.end))) {
+        alert("他のアプリ稼働と重複のため時間調整できません");
+        return prev;
+      }
+      if (dutyConflictsWithBookings(bookings, cand)) {
+        alert("予約と重複するため時間調整できません");
+        return prev;
+      }
+      applied = true;
+      return prev.map((x) => (x.id === dutyId ? cand : x));
+    });
+    return applied;
+  };
+
   function handleLaneDrop(vehicleId: number, e: ReactDragEvent) {
     laneHighlight(e.currentTarget as HTMLElement, false);
     const dt = e.dataTransfer;
@@ -563,6 +600,7 @@ export default function VehicleDispatchBoardMock() {
                         onClick={() => openDrawer({ type: "duty", data: a, vehicle: v })}
                         isSelected={selected?.type === "duty" && selected?.id === a.id}
                         onMoveDutyToVehicle={(dutyId, fromVehicleId, destVehicleId) => moveDutyByPointer(dutyId, fromVehicleId, destVehicleId)}
+                        onResize={(dutyId, nextStart, nextEnd) => handleResizeDuty(dutyId, nextStart, nextEnd)}
                       />
                     ))}
                     {(bookingsByVehicle.get(v.id) || []).map((b: BoardBooking) => (
@@ -694,8 +732,42 @@ function GridOverlay({ hourPx }: { hourPx: number }) {
   );
 }
 
-function AppDutyBlock({ duty, pxPerMin, viewDate, onClick, isSelected, onMoveDutyToVehicle }: { duty: any; pxPerMin: number; viewDate: string; onClick: () => void; isSelected?: boolean; onMoveDutyToVehicle: (dutyId: string, fromVehicleId: number, destVehicleId: number) => void }) {
-  const { left, width, clipL, clipR, overnight } = rangeForDay(duty.start, duty.end, viewDate, pxPerMin);
+function AppDutyBlock({
+  duty,
+  pxPerMin,
+  viewDate,
+  onClick,
+  isSelected,
+  onMoveDutyToVehicle,
+  onResize
+}: {
+  duty: any;
+  pxPerMin: number;
+  viewDate: string;
+  onClick: () => void;
+  isSelected?: boolean;
+  onMoveDutyToVehicle: (dutyId: string, fromVehicleId: number, destVehicleId: number) => void;
+  onResize: (dutyId: string, nextStart: string, nextEnd: string) => boolean;
+}) {
+  const [allowDrag, setAllowDrag] = useState(true);
+  const [draftRange, setDraftRange] = useState<DraftRange | null>(null);
+  const draftRangeRef = useRef<DraftRange | null>(null);
+  const resizeStateRef = useRef<ResizeState | null>(null);
+
+  const applyDraftRange = (next: DraftRange | null) => {
+    draftRangeRef.current = next;
+    setDraftRange(next);
+  };
+
+  useEffect(() => {
+    draftRangeRef.current = null;
+    setDraftRange(null);
+    setAllowDrag(true);
+  }, [duty.start, duty.end]);
+
+  const displayStart = draftRange?.start ?? duty.start;
+  const displayEnd = draftRange?.end ?? duty.end;
+  const { left, width, clipL, clipR, overnight } = rangeForDay(displayStart, displayEnd, viewDate, pxPerMin);
   if (width <= 0) return null;
   const driverLabel = duty.driverId ? `（${driverMap.get(duty.driverId)?.name}）` : "";
 
@@ -711,6 +783,7 @@ function AppDutyBlock({ duty, pxPerMin, viewDate, onClick, isSelected, onMoveDut
     }
   };
   const onPointerDown = (e: any) => {
+    if (!allowDrag) return;
     if (e.pointerType === "mouse") return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     pId.current = e.pointerId;
@@ -719,6 +792,7 @@ function AppDutyBlock({ duty, pxPerMin, viewDate, onClick, isSelected, onMoveDut
     }, LP_MS);
   };
   const onPointerMove = (e: any) => {
+    if (!allowDrag) return;
     if (!draggingTouch.current) return;
     const vid = vehicleIdAtPoint(e.clientX, e.clientY);
     if (vid !== hoverVid.current) {
@@ -746,17 +820,108 @@ function AppDutyBlock({ duty, pxPerMin, viewDate, onClick, isSelected, onMoveDut
     pId.current = null;
   };
 
+  const beginResize = (side: "start" | "end") => (e: any) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setAllowDrag(false);
+    const target = e.currentTarget as HTMLElement;
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch (err) {
+      /* ignore */
+    }
+    resizeStateRef.current = {
+      side,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      baseStart: new Date(duty.start),
+      baseEnd: new Date(duty.end),
+      lastStep: 0
+    };
+    applyDraftRange({ start: duty.start, end: duty.end });
+  };
+
+  const onResizeMove = (e: any) => {
+    const state = resizeStateRef.current;
+    if (!state || e.pointerId !== state.pointerId) return;
+    e.stopPropagation();
+    const deltaPx = e.clientX - state.startX;
+    if (!pxPerMin) return;
+    const deltaMinutes = deltaPx / pxPerMin;
+    const step = Math.round(deltaMinutes / RESIZE_STEP_MINUTES) * RESIZE_STEP_MINUTES;
+    if (step === state.lastStep) return;
+    state.lastStep = step;
+    let nextStart = new Date(state.baseStart);
+    let nextEnd = new Date(state.baseEnd);
+    if (state.side === "start") {
+      nextStart = new Date(state.baseStart.getTime() + step * 60000);
+      const maxStart = state.baseEnd.getTime() - MIN_BOOKING_DURATION_MINUTES * 60000;
+      if (nextStart.getTime() > maxStart) {
+        nextStart = new Date(maxStart);
+      }
+    } else {
+      nextEnd = new Date(state.baseEnd.getTime() + step * 60000);
+      const minEnd = state.baseStart.getTime() + MIN_BOOKING_DURATION_MINUTES * 60000;
+      if (nextEnd.getTime() < minEnd) {
+        nextEnd = new Date(minEnd);
+      }
+    }
+    const draft: DraftRange = { start: toJstIso(nextStart), end: toJstIso(nextEnd) };
+    const prev = draftRangeRef.current;
+    if (prev && prev.start === draft.start && prev.end === draft.end) return;
+    applyDraftRange(draft);
+  };
+
+  const finishResize = (e: any, applyChange: boolean) => {
+    const state = resizeStateRef.current;
+    if (!state || e.pointerId !== state.pointerId) return;
+    e.stopPropagation();
+    e.preventDefault();
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(state.pointerId);
+    } catch (err) {
+      /* ignore */
+    }
+    resizeStateRef.current = null;
+    setAllowDrag(true);
+    const finalRange = draftRangeRef.current;
+    if (!applyChange || !finalRange) {
+      applyDraftRange(null);
+      return;
+    }
+    const changed = finalRange.start !== duty.start || finalRange.end !== duty.end;
+    if (!changed) {
+      applyDraftRange(null);
+      return;
+    }
+    const ok = onResize(duty.id, finalRange.start, finalRange.end);
+    if (!ok) {
+      applyDraftRange(null);
+    }
+  };
+
+  const onResizePointerUp = (e: any) => finishResize(e, true);
+  const onResizePointerCancel = (e: any) => finishResize(e, false);
+
+  const startLabel = fmt(displayStart);
+  const endLabel = fmt(displayEnd);
+  const showDraft = draftRange != null;
+
   return (
     <div
-      className={`absolute top-2 h-12 bg-purple-500/25 border border-purple-300/60 rounded-lg px-2 py-1 text-[11px] text-purple-900 flex items-end cursor-pointer ${isSelected ? "ring-2 ring-blue-500 shadow-lg" : ""}`}
+      className={`absolute top-2 h-12 bg-purple-500/25 border border-purple-300/60 rounded-lg px-2 py-1 text-[11px] text-purple-900 flex items-end cursor-pointer ${isSelected ? "ring-2 ring-blue-500 shadow-lg" : ""} ${showDraft ? "ring-2 ring-purple-400" : ""}`}
       style={{ left, width }}
       title={`${duty.service}${driverLabel}`}
       onClick={onClick}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      draggable
+      draggable={allowDrag}
       onDragStart={(e) => {
+        if (!allowDrag) {
+          e.preventDefault();
+          return;
+        }
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/x-duty-move", String(duty.id));
         e.dataTransfer.setData("text/x-from-vehicle-id", String(duty.vehicleId));
@@ -764,13 +929,31 @@ function AppDutyBlock({ duty, pxPerMin, viewDate, onClick, isSelected, onMoveDut
       }}
     >
       {clipL && <EdgeFlag pos="left" />}
+      <div
+        className="absolute inset-y-0 left-0 w-2 cursor-ew-resize flex items-center justify-center"
+        onPointerDown={beginResize("start")}
+        onPointerMove={onResizeMove}
+        onPointerUp={onResizePointerUp}
+        onPointerCancel={onResizePointerCancel}
+      >
+        <div className="w-1 h-4 bg-purple-400 rounded-full" />
+      </div>
       <div className="truncate">
         {duty.service}
-        {driverLabel}：{fmt(duty.start)}-{fmt(duty.end)}
+        {driverLabel}：{startLabel}-{endLabel}
         {overnight ? "（→翌）" : ""}
       </div>
       <div className="ml-auto text-[10px] bg-white/60 px-1 rounded">アプリ稼働</div>
       {clipR && <EdgeFlag pos="right" />}
+      <div
+        className="absolute inset-y-0 right-0 w-2 cursor-ew-resize flex items-center justify-center"
+        onPointerDown={beginResize("end")}
+        onPointerMove={onResizeMove}
+        onPointerUp={onResizePointerUp}
+        onPointerCancel={onResizePointerCancel}
+      >
+        <div className="w-1 h-4 bg-purple-400 rounded-full" />
+      </div>
     </div>
   );
 }
