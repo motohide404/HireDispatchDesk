@@ -631,13 +631,14 @@ export default function VehicleDispatchBoardMock() {
 
 
   useEffect(() => {
-    if (!fullView) return;
     const el = centerRef.current;
     if (!el) return;
     const fit = () => {
       const w = el.clientWidth;
-      const p = Math.max(MIN_PX_PER_MIN, w / (24 * 60));
-      setPxPerMin(p);
+      if (!Number.isFinite(w) || w <= 0) return;
+      const base = Math.max(MIN_PX_PER_MIN, w / (24 * 60));
+      const next = fullView ? base : Math.min(DEFAULT_PX_PER_MIN, base);
+      setPxPerMin((prev) => (Math.abs(prev - next) < 0.005 ? prev : next));
     };
     fit();
     const ro = new ResizeObserver(fit);
