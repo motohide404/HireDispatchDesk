@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+
+import { useFlashOnChange } from "../lib/useFlashOnChange";
 import type { DragEvent as ReactDragEvent } from "react";
 
 import "./VehicleDispatchBoardMock.css";
@@ -28,7 +30,16 @@ const DRIVERS = [
 ];
 const driverMap = new Map(DRIVERS.map((d) => [d.id, d]));
 
-const APP_DUTIES_INIT = [
+type AppDuty = {
+  id: string;
+  vehicleId: number;
+  driverId: number | null;
+  service: string;
+  start: string;
+  end: string;
+};
+
+const APP_DUTIES_INIT: AppDuty[] = [
   { id: "A1", vehicleId: 14, driverId: 1, service: "Uber", start: "2025-10-03T08:00:00+09:00", end: "2025-10-03T16:00:00+09:00" },
   { id: "A2", vehicleId: 12, driverId: null, service: "GO", start: "2025-10-03T06:00:00+09:00", end: "2025-10-03T09:00:00+09:00" },
   { id: "A3", vehicleId: 12, driverId: 4, service: "nearMe", start: "2025-10-03T20:00:00+09:00", end: "2025-10-03T23:30:00+09:00" }
@@ -187,7 +198,7 @@ export default function VehicleDispatchBoardMock() {
   const [drawerItem, setDrawerItem] = useState<any>(null);
   const [selected, setSelected] = useState<{ type: "booking" | "duty"; id: number | string } | null>(null);
   const [bookings, setBookings] = useState<BoardBooking[]>(BOOKINGS);
-  const [appDuties, setAppDuties] = useState(APP_DUTIES_INIT);
+  const [appDuties, setAppDuties] = useState<AppDuty[]>(APP_DUTIES_INIT);
   const [jobPool, setJobPool] = useState(UNASSIGNED_JOBS);
   const [flashUnassignId, setFlashUnassignId] = useState<number | null>(null);
   const bookingIdRef = useRef(500);
@@ -352,6 +363,26 @@ export default function VehicleDispatchBoardMock() {
       }
       return prev.map((x) => (x.id === dutyId ? cand : x));
     });
+  };
+
+  const assignDriverToAppDuty = (dutyId: string, driverId: number) => {
+    const duty = appDuties.find((x) => x.id === dutyId);
+    if (!duty) return false;
+    if (duty.driverId === driverId) return false;
+
+    const incomingDriverName = driverMap.get(driverId)?.name ?? "新ドライバー";
+    const currentDriverName =
+      duty.driverId != null ? driverMap.get(duty.driverId)?.name ?? "現在のドライバー" : null;
+
+    const message = currentDriverName
+      ? `現在: ${currentDriverName} → 新: ${incomingDriverName} に変更しますか？`
+      : `${incomingDriverName} をこのアプリ配車に割り当てますか？`;
+
+    const ok = typeof window === "undefined" ? true : window.confirm(message);
+    if (!ok) return false;
+
+    setAppDuties((prev) => prev.map((x) => (x.id === dutyId ? { ...x, driverId } : x)));
+    return true;
   };
 
   const handleResizeDuty = (dutyId: string, nextStartIso: string, nextEndIso: string) => {
@@ -594,16 +625,17 @@ export default function VehicleDispatchBoardMock() {
                     onDrop={(e) => handleLaneDrop(v.id, e)}
                   >
                     {(appDutiesByVehicle.get(v.id) || []).map((a: any) => (
-                      <AppDutyBlock
-                        key={a.id}
-                        duty={a}
-                        pxPerMin={pxPerMin}
-                        viewDate={dateStr}
-                        onClick={() => openDrawer({ type: "duty", data: a, vehicle: v })}
-                        isSelected={selected?.type === "duty" && selected?.id === a.id}
-                        onMoveDutyToVehicle={(dutyId, fromVehicleId, destVehicleId) => moveDutyByPointer(dutyId, fromVehicleId, destVehicleId)}
-                        onResize={(dutyId, nextStart, nextEnd) => handleResizeDuty(dutyId, nextStart, nextEnd)}
-                      />
+                    <AppDutyBlock
+                      key={a.id}
+                      duty={a}
+                      pxPerMin={pxPerMin}
+                      viewDate={dateStr}
+                      onClick={() => openDrawer({ type: "duty", data: a, vehicle: v })}
+                      isSelected={selected?.type === "duty" && selected?.id === a.id}
+                      onMoveDutyToVehicle={(dutyId, fromVehicleId, destVehicleId) => moveDutyByPointer(dutyId, fromVehicleId, destVehicleId)}
+                      onDriverDrop={(dutyId, driverId) => assignDriverToAppDuty(dutyId, driverId)}
+                      onResize={(dutyId, nextStart, nextEnd) => handleResizeDuty(dutyId, nextStart, nextEnd)}
+                    />
                     ))}
                     {(bookingsByVehicle.get(v.id) || []).map((b: BoardBooking) => (
                       <BookingBlock
@@ -741,14 +773,16 @@ function AppDutyBlock({
   onClick,
   isSelected,
   onMoveDutyToVehicle,
+  onDriverDrop,
   onResize
 }: {
-  duty: any;
+  duty: AppDuty;
   pxPerMin: number;
   viewDate: string;
   onClick: () => void;
   isSelected?: boolean;
   onMoveDutyToVehicle: (dutyId: string, fromVehicleId: number, destVehicleId: number) => void;
+  onDriverDrop: (dutyId: string, driverId: number) => boolean;
   onResize: (dutyId: string, nextStart: string, nextEnd: string) => boolean;
 }) {
   const [allowDrag, setAllowDrag] = useState(true);
@@ -772,7 +806,45 @@ function AppDutyBlock({
   const displayEnd = draftRange?.end ?? duty.end;
   const { left, width, clipL, clipR, overnight } = rangeForDay(displayStart, displayEnd, viewDate, pxPerMin);
   if (width <= 0) return null;
-  const driverLabel = duty.driverId ? `（${driverMap.get(duty.driverId)?.name}）` : "";
+  const driver = duty.driverId != null ? driverMap.get(duty.driverId) ?? null : null;
+  const driverBadgeRef = useFlashOnChange<HTMLSpanElement>(driver ? `${driver.id}-${driver.name}` : "", 1500);
+  const [driverDragOver, setDriverDragOver] = useState(false);
+
+  const handleDriverDragOver = (e: ReactDragEvent<HTMLDivElement>) => {
+    const types = Array.from(e.dataTransfer?.types || []);
+    if (!types.includes("text/x-driver-id")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    setDriverDragOver(true);
+  };
+
+  const handleDriverDragLeave = (e: ReactDragEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDriverDragOver(false);
+  };
+
+  const handleDriverDrop = (e: ReactDragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDriverDragOver(false);
+    const types = Array.from(e.dataTransfer?.types || []);
+    if (!types.includes("text/x-driver-id")) return;
+    const raw = e.dataTransfer.getData("text/x-driver-id");
+    const driverId = Number(raw);
+    if (Number.isNaN(driverId)) return;
+    suppressClickRef.current = true;
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 200);
+    } else {
+      suppressClickRef.current = false;
+    }
+    onDriverDrop(duty.id, driverId);
+  };
+
+  const driverLabel = driver ? `（${driver.name}）` : "";
 
   const pId = useRef<number | null>(null);
   const longRef = useRef<any>(null);
@@ -921,13 +993,18 @@ function AppDutyBlock({
 
   return (
     <div
-      className={`absolute top-2 h-12 bg-purple-500/25 border border-purple-300/60 rounded-lg px-2 py-1 text-[11px] text-purple-900 flex items-end cursor-pointer ${isSelected ? "ring-2 ring-blue-500 shadow-lg" : ""} ${showDraft ? "ring-2 ring-purple-400" : ""}`}
+      className={`absolute top-2 h-12 bg-purple-500/25 border border-purple-300/60 rounded-lg px-2 py-1 text-[11px] text-purple-900 flex flex-col justify-between cursor-pointer ${
+        isSelected ? "ring-2 ring-blue-500 shadow-lg" : ""
+      } ${showDraft ? "ring-2 ring-purple-400" : ""} ${driverDragOver ? "ring-2 ring-blue-400 shadow-lg" : ""}`}
       style={{ left, width }}
       title={`${duty.service}${driverLabel}`}
       onClick={handleCardClick}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onDragOver={handleDriverDragOver}
+      onDragLeave={handleDriverDragLeave}
+      onDrop={handleDriverDrop}
       draggable={allowDrag}
       onDragStart={(e) => {
         if (!allowDrag) {
@@ -951,12 +1028,26 @@ function AppDutyBlock({
       >
         <div className="w-1 h-4 bg-purple-400 rounded-full" />
       </div>
-      <div className="truncate">
-        {duty.service}
-        {driverLabel}：{startLabel}-{endLabel}
-        {overnight ? "（→翌）" : ""}
+      <div className="flex items-center justify-between gap-2 pr-6">
+        <div className="truncate font-semibold">{duty.service}</div>
+        <span
+          ref={driverBadgeRef}
+          className={`text-[10px] px-2 py-0.5 rounded border ${
+            driver
+              ? "border-white bg-white/80 text-purple-900"
+              : "border-dashed border-white/60 text-purple-900/70 bg-white/40"
+          }`}
+        >
+          {driver ? `${driver.name}（${driver.code}）` : "未割当"}
+        </span>
       </div>
-      <div className="ml-auto text-[10px] bg-white/60 px-1 rounded">アプリ稼働</div>
+      <div className="flex items-end justify-between gap-2 pr-6">
+        <div className="truncate">
+          {startLabel}-{endLabel}
+          {overnight ? "（→翌）" : ""}
+        </div>
+        <div className="ml-auto text-[10px] bg-white/60 px-1 rounded">アプリ稼働</div>
+      </div>
       {clipR && <EdgeFlag pos="right" />}
       <div
         className="absolute inset-y-0 right-0 w-2 cursor-ew-resize flex items-center justify-center"
@@ -1042,34 +1133,10 @@ function BookingBlock({
   const ring = booking.status === "ok" ? "ring-green-400" : booking.status === "warn" ? "ring-yellow-400" : "ring-red-400";
   const driver = booking.driverId ? driverMap.get(booking.driverId) : null;
 
-  const driverFrameRef = useRef<HTMLSpanElement | null>(null);
-  const prevDriverIdRef = useRef<number | null>(booking.driverId ?? null);
-
-  useEffect(() => {
-    const currentDriverId = booking.driverId ?? null;
-    const previousDriverId = prevDriverIdRef.current;
-    prevDriverIdRef.current = currentDriverId;
-
-    if (currentDriverId == null) {
-      driverFrameRef.current?.classList.remove("flash-border");
-      return;
-    }
-
-    if (previousDriverId === currentDriverId) {
-      return;
-    }
-
-    const frame = driverFrameRef.current;
-    if (!frame) return;
-
-    frame.classList.remove("flash-border");
-    void frame.offsetWidth;
-    frame.classList.add("flash-border");
-
-    if (typeof window === "undefined") return;
-    const timeout = window.setTimeout(() => frame.classList.remove("flash-border"), 1500);
-    return () => window.clearTimeout(timeout);
-  }, [booking.driverId]);
+  const driverFrameRef = useFlashOnChange<HTMLSpanElement>(
+    booking.driverId != null ? `${booking.driverId}` : "",
+    1500
+  );
 
   const [over, setOver] = useState(false);
   const handleDragOver = (e: any) => {
