@@ -506,10 +506,21 @@ export default function VehicleDispatchBoardMock() {
         bookingCount: 0,
         dutyCount: 0,
         mergedIntervals: [] as Interval[],
-        busyMinutes: 0
+        busyMinutes: 0,
+        todaysAssignmentCount: 0,
+        monthlyTotalAssignments: 0,
+        todaysOrdinalRange: null as null | { start: number; end: number }
       }));
     }
     const dayEnd = dayStart + DAY_MS;
+    const monthStart = new Date(viewDateObj.getFullYear(), viewDateObj.getMonth(), 1).getTime();
+    const monthEnd = new Date(viewDateObj.getFullYear(), viewDateObj.getMonth() + 1, 1).getTime();
+
+    const toAssignment = (id: string, start: string) => ({
+      id,
+      start: new Date(start).getTime()
+    });
+
     return DRIVERS.map((driver) => {
       const todaysBookings = bookings
         .filter((b) => b.driverId === driver.id)
@@ -523,12 +534,41 @@ export default function VehicleDispatchBoardMock() {
       const busyMinutes = Math.round(
         mergedIntervals.reduce((acc, interval) => acc + (interval.end - interval.start) / 60000, 0)
       );
+
+      const monthlyAssignments = [
+        ...bookings
+          .filter((b) => b.driverId === driver.id)
+          .map((b) => toAssignment(`booking-${b.id}`, b.start))
+          .filter((assignment) => assignment.start >= monthStart && assignment.start < monthEnd),
+        ...appDuties
+          .filter((duty) => duty.driverId === driver.id)
+          .map((duty) => toAssignment(`duty-${duty.id}`, duty.start))
+          .filter((assignment) => assignment.start >= monthStart && assignment.start < monthEnd)
+      ].sort((a, b) => a.start - b.start);
+
+      const todaysAssignmentCount = todaysBookings.length + todaysDuties.length;
+      const todaysAssignmentIndexes = monthlyAssignments
+        .map((assignment, index) => ({ assignment, index }))
+        .filter(({ assignment }) => assignment.start >= dayStart && assignment.start < dayEnd)
+        .map(({ index }) => index + 1);
+
+      let todaysOrdinalRange: null | { start: number; end: number } = null;
+      if (todaysAssignmentIndexes.length > 0) {
+        todaysOrdinalRange = {
+          start: todaysAssignmentIndexes[0],
+          end: todaysAssignmentIndexes[todaysAssignmentIndexes.length - 1]
+        };
+      }
+
       return {
         driver,
         bookingCount: todaysBookings.length,
         dutyCount: todaysDuties.length,
         mergedIntervals,
-        busyMinutes
+        busyMinutes,
+        todaysAssignmentCount,
+        monthlyTotalAssignments: monthlyAssignments.length,
+        todaysOrdinalRange
       };
     });
   }, [appDuties, bookings, viewDateObj]);
@@ -1376,63 +1416,85 @@ export default function VehicleDispatchBoardMock() {
                 </div>
                 <span className="text-xs text-slate-500">{driverDailySummaries.length} 名</span>
               </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        ドライバー
-                      </th>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        担当状況
-                      </th>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        稼働時間
-                      </th>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        メモ
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700">
-                    {driverDailySummaries.map((summary) => {
-                      const { driver, bookingCount, dutyCount, mergedIntervals, busyMinutes } = summary;
-                      const totalAssignments = bookingCount + dutyCount;
-                      const statusLabel = totalAssignments > 0 ? "稼働中" : "待機";
-                      const firstInterval = mergedIntervals[0];
-                      const lastInterval = mergedIntervals[mergedIntervals.length - 1];
-                      return (
-                        <tr key={driver.id} className="even:bg-slate-50/60">
-                          <td className="px-5 py-3 align-top">
-                            <div className="font-medium text-slate-800">{driver.name}</div>
-                            <div className="text-xs text-slate-500">{driver.code}</div>
-                          </td>
-                          <td className="px-5 py-3 align-top">
-                            <div>
-                              予約 {bookingCount} 件 / アプリ {dutyCount} 件
-                            </div>
-                            <div className="text-xs text-slate-500">{statusLabel}</div>
-                          </td>
-                          <td className="px-5 py-3 align-top">
+              <div className="px-5 py-5">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {driverDailySummaries.map((summary) => {
+                    const {
+                      driver,
+                      bookingCount,
+                      dutyCount,
+                      mergedIntervals,
+                      busyMinutes,
+                      todaysAssignmentCount,
+                      monthlyTotalAssignments,
+                      todaysOrdinalRange
+                    } = summary;
+                    const totalAssignments = bookingCount + dutyCount;
+                    const statusLabel = totalAssignments > 0 ? "稼働中" : "待機";
+                    const firstInterval = mergedIntervals[0];
+                    const lastInterval = mergedIntervals[mergedIntervals.length - 1];
+                    const ordinalLabel = todaysOrdinalRange
+                      ? todaysOrdinalRange.start === todaysOrdinalRange.end
+                        ? `今月${todaysOrdinalRange.start}件目`
+                        : `今月${todaysOrdinalRange.start}〜${todaysOrdinalRange.end}件目`
+                      : "本日担当なし";
+                    return (
+                      <article
+                        key={driver.id}
+                        className="flex h-full flex-col justify-between rounded-2xl border border-slate-200 bg-slate-50/60 p-4 text-xs text-slate-600 shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-800">{driver.name}</div>
+                            <div className="text-[11px] text-slate-500">{driver.code}</div>
+                          </div>
+                          <span className="inline-flex items-center rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                            {statusLabel}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-500">
+                            <span>本日</span>
+                            <span className="text-slate-800">{totalAssignments} 件</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span>予約</span>
+                            <span className="font-medium text-slate-800">{bookingCount} 件</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span>アプリ</span>
+                            <span className="font-medium text-slate-800">{dutyCount} 件</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span>稼働時間</span>
                             {busyMinutes > 0 && firstInterval && lastInterval ? (
-                              <div className="space-y-1">
-                                <div>{formatMinutesLabel(busyMinutes)}</div>
-                                <div className="text-xs text-slate-500">
+                              <div className="text-right">
+                                <div className="font-medium text-slate-800">{formatMinutesLabel(busyMinutes)}</div>
+                                <div className="text-[11px] text-slate-500">
                                   {formatTimeInJst(firstInterval.start)}〜{formatTimeInJst(lastInterval.end)}
                                 </div>
                               </div>
                             ) : (
-                              <div className="text-slate-500">終日空き</div>
+                              <span className="text-slate-500">終日空き</span>
                             )}
-                          </td>
-                          <td className="px-5 py-3 align-top text-xs text-slate-500">
-                            延長使用 {driver.extUsed}/7
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 rounded-xl bg-white/70 p-3">
+                          <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-500">
+                            <span>今月</span>
+                            <span className="text-slate-800">{monthlyTotalAssignments} 件</span>
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            {todaysAssignmentCount > 0 ? `本日担当 ${todaysAssignmentCount} 件（${ordinalLabel}）` : ordinalLabel}
+                          </div>
+                          <div className="mt-2 text-[11px] text-slate-400">延長使用 {driver.extUsed}/7</div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </section>
