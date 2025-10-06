@@ -1242,12 +1242,21 @@ export default function VehicleDispatchBoardMock() {
             ) : null}
             <div
               ref={centerRef}
-              className={`bg-white rounded-2xl shadow p-3 relative h-full overflow-y-auto ${fullView ? "overflow-x-hidden" : "overflow-x-auto"}`}
+              className={`h-full w-full bg-white rounded-2xl shadow p-3 relative overflow-y-auto ${fullView ? "overflow-x-hidden" : "overflow-x-auto"}`}
             >
               <div className="flex items-center justify-between mb-2 sticky left-0 top-0 z-10 bg-white pr-2">
                 <h2 className="font-medium">モータープール</h2>
                 <span className="text-xs text-slate-500">00:00〜24:00（{pxPerMin.toFixed(2)} px/min）</span>
               </div>
+
+              <div className="relative" style={{ width: CONTENT_WIDTH }}>
+                <GridOverlay hourPx={60 * pxPerMin} />
+                {currentTimePosition.visible ? (
+                  <div
+                    className="pointer-events-none absolute inset-y-0 w-[2px] bg-amber-500"
+                    style={{ left: 0, transform: `translateX(${currentTimePosition.x}px)` }}
+                />
+              ) : null}
 
               <div className="relative" style={{ width: CONTENT_WIDTH }}>
                 <GridOverlay hourPx={60 * pxPerMin} />
@@ -1339,6 +1348,7 @@ export default function VehicleDispatchBoardMock() {
                     </div>
                   ))}
                 </div>
+              </div>
               </div>
             </div>
           </div>
