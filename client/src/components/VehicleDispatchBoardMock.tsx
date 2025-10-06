@@ -1240,46 +1240,24 @@ export default function VehicleDispatchBoardMock() {
               <button
                 type="button"
                 onClick={() => shiftViewDate(-1)}
-                className="pointer-events-auto absolute left-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                className="absolute left-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
                 style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
                 aria-label="前日の夜間予約へ移動"
                 title="前日の夜間予約へ移動"
               >
-                {/* 左矢印（アイコン） */}
-                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                  <path
-                    d="M15 18L9 12l6-6"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <span>前</span>
+                ←前
               </button>
             ) : null}
             {hasNextOvernight ? (
               <button
                 type="button"
                 onClick={() => shiftViewDate(1)}
-                className="pointer-events-auto absolute right-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                className="absolute right-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
                 style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
                 aria-label="翌日の夜間予約へ移動"
                 title="翌日の夜間予約へ移動"
               >
-                {/* 右矢印（アイコン） */}
-                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                  <path
-                    d="M9 6l6 6-6 6"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <span>翌</span>
+                →翌
               </button>
             ) : null}
             <div
