@@ -494,7 +494,7 @@ export default function VehicleDispatchBoardMock() {
       <div className="w-full h-full p-4 bg-slate-50">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold">配車ボード（車両軸）</h1>
+            <h1 className="text-3xl font-bold">配車ボード</h1>
             <span className="text-slate-500">{dateStr}</span>
           </div>
           <div className="flex items-center gap-2">
