@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 export function useFlashOnChange<T extends HTMLElement>(
   value: unknown,
   duration = 1500,
-  className = "flash-border"
+  className = "badge-flash"
 ) {
   const nodeRef = useRef<T | null>(null);
   const prevValueRef = useRef(value);
@@ -39,22 +39,35 @@ export function useFlashOnChange<T extends HTMLElement>(
 
     if (typeof node.animate === "function") {
       const singleDuration = duration / 5;
+      const originalBorderColor = node.style.borderColor;
       animationRef.current = node.animate(
         [
-          { borderColor: "#ffffff", boxShadow: "0 0 0 0 rgba(255, 255, 255, 0)" },
           {
-            borderColor: "#60a5fa",
-            boxShadow: "0 0 0 3px rgba(255, 255, 255, 0.9), 0 0 10px 2px rgba(96, 165, 250, 0.85)"
+            opacity: 1,
+            boxShadow: "0 0 0 0 rgba(251, 191, 36, 0)",
+            borderColor: originalBorderColor
           },
-          { borderColor: "#ffffff", boxShadow: "0 0 0 0 rgba(255, 255, 255, 0)" }
+          {
+            opacity: 0.3,
+            boxShadow: "0 0 0 3px rgba(251, 191, 36, 0.9)",
+            borderColor: "rgb(251, 191, 36)"
+          },
+          {
+            opacity: 1,
+            boxShadow: "0 0 0 0 rgba(251, 191, 36, 0)",
+            borderColor: originalBorderColor
+          }
         ],
         { duration: singleDuration, iterations: 5, easing: "ease-in-out" }
       );
-      animationRef.current.onfinish = () => {
+      const resetStyles = () => {
         node.style.removeProperty("box-shadow");
-        node.style.removeProperty("border-color");
+        node.style.borderColor = originalBorderColor;
+        node.style.removeProperty("opacity");
         animationRef.current = null;
       };
+      animationRef.current.onfinish = resetStyles;
+      animationRef.current.oncancel = resetStyles;
       return;
     }
 

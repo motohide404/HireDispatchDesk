@@ -133,7 +133,9 @@ function applyBookingMove(
 ): BoardBooking {
   const origin = originVehicleId == null || Number.isNaN(originVehicleId) ? b.vehicleId : originVehicleId;
   const crossed = destVehicleId !== origin;
-  return { ...b, vehicleId: destVehicleId, driverId: crossed ? null : originalDriverId ?? b.driverId ?? null };
+  const keepDriver = !crossed || isAppJob(b);
+  const driverId = keepDriver ? originalDriverId ?? b.driverId ?? null : null;
+  return { ...b, vehicleId: destVehicleId, driverId };
 }
 
 function isSameVehicleOverlap(all: BoardBooking[], cand: BoardBooking): boolean {
@@ -203,7 +205,34 @@ export default function VehicleDispatchBoardMock() {
   const [flashUnassignId, setFlashUnassignId] = useState<number | null>(null);
   const bookingIdRef = useRef(500);
   const centerRef = useRef<HTMLDivElement | null>(null);
-  const dateStr = "2025-10-03";
+  const [viewDate, setViewDate] = useState("2025-10-03");
+  const dateInputRef = useRef<HTMLInputElement | null>(null);
+
+  const viewDateObj = useMemo(() => new Date(`${viewDate}T00:00:00+09:00`), [viewDate]);
+  const viewDateDisplay = useMemo(() => {
+    const base = viewDateObj.toLocaleDateString("ja-JP", {
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    });
+    const weekday = viewDateObj.toLocaleDateString("ja-JP", { weekday: "short" });
+    return `${base}（${weekday}）`;
+  }, [viewDateObj]);
+  const shiftViewDate = (delta: number) => {
+    const next = new Date(viewDateObj);
+    next.setDate(next.getDate() + delta);
+    setViewDate(`${next.getFullYear()}-${pad2(next.getMonth() + 1)}-${pad2(next.getDate())}`);
+  };
+  const openDatePicker = () => {
+    const input = dateInputRef.current;
+    if (!input) return;
+    if (typeof (input as HTMLInputElement & { showPicker?: () => void }).showPicker === "function") {
+      (input as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
+      return;
+    }
+    input.click();
+  };
+
 
   useEffect(() => {
     if (!fullView) return;
@@ -252,7 +281,7 @@ export default function VehicleDispatchBoardMock() {
     return map;
   }, [appDuties]);
 
-  const canZoom = !fullView;
+  const canZoom = fullView;
   const zoom = (delta: number) => {
     if (!canZoom) return;
     setPxPerMin((p) => Math.min(6, Math.max(0.5, p + delta)));
@@ -283,8 +312,8 @@ export default function VehicleDispatchBoardMock() {
   }
 
   const moveBookingByPointer = (bookingId: number, fromVehicleId: number, destVehicleId: number, originalDriverId: number | null) => {
-    const crossed = destVehicleId !== fromVehicleId;
     let moved = false;
+    let driverUnassigned = false;
     setBookings((prev) => {
       const cur = prev.find((x) => x.id === bookingId);
       if (!cur) return prev;
@@ -301,9 +330,10 @@ export default function VehicleDispatchBoardMock() {
       const warn = bufferWarn(prev, cand);
       const finalized = warn ? { ...cand, status: cand.status === "hard" ? "hard" : "warn" } : cand;
       moved = true;
+      driverUnassigned = cur.driverId != null && finalized.driverId == null;
       return prev.map((x) => (x.id === bookingId ? finalized : x));
     });
-    if (moved && crossed && originalDriverId != null) {
+    if (moved && driverUnassigned) {
       setFlashUnassignId(bookingId);
       window.setTimeout(() => setFlashUnassignId(null), 1500);
     }
@@ -521,12 +551,58 @@ export default function VehicleDispatchBoardMock() {
 
   return (
     <>
-      <style>{`@keyframes badge-blink{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(251,191,36,0)}50%{opacity:0;box-shadow:0 0 0 3px rgba(251,191,36,0.9)}}.blink3{animation:badge-blink 0.5s ease-in-out 3}`}</style>
+      <style>{`@keyframes badge-blink{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(251,191,36,0);border-color:inherit}50%{opacity:0.3;box-shadow:0 0 0 3px rgba(251,191,36,0.9);border-color:rgb(251 191 36)}}.badge-flash{animation:badge-blink 0.3s ease-in-out 5}`}</style>
       <div className="w-full h-full p-4 bg-slate-50">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-bold">配車ボード</h1>
-            <span className="text-slate-500">{dateStr}</span>
+        <div className="flex flex-wrap items-end justify-between gap-4 mb-3">
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-end gap-3">
+              <h1 className="text-3xl md:text-4xl font-bold leading-tight text-slate-800">配車ボード</h1>
+              <span className="text-4xl font-extrabold tracking-tight text-slate-900 leading-none">{viewDateDisplay}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-lg font-semibold text-slate-700 shadow-sm hover:bg-slate-100"
+                onClick={() => shiftViewDate(-1)}
+                title="前日へ"
+              >
+                ◀
+              </button>
+              <div className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 shadow-sm">
+                <span className="text-xl font-semibold tracking-wider text-slate-800">{viewDate}</span>
+              </div>
+              <button
+                type="button"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-lg font-semibold text-slate-700 shadow-sm hover:bg-slate-100"
+                onClick={() => shiftViewDate(1)}
+                title="翌日へ"
+              >
+                ▶
+              </button>
+              <button
+                type="button"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100"
+                onClick={openDatePicker}
+                title="カレンダーから日付を選択"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M7 3v2m10-2v2M5 8h14M6 6h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z" strokeLinecap="round" strokeLinejoin="round" />
+                  <rect x="8" y="11" width="3" height="3" rx="0.5" />
+                  <rect x="13" y="11" width="3" height="3" rx="0.5" />
+                  <rect x="8" y="15" width="3" height="3" rx="0.5" />
+                  <rect x="13" y="15" width="3" height="3" rx="0.5" />
+                </svg>
+              </button>
+              <input
+                ref={dateInputRef}
+                type="date"
+                className="sr-only"
+                value={viewDate}
+                onChange={(e) => {
+                  if (e.target.value) setViewDate(e.target.value);
+                }}
+              />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="inline-flex border rounded overflow-hidden" role="group" aria-label="表示モード切替">
@@ -557,12 +633,36 @@ export default function VehicleDispatchBoardMock() {
             <div className="inline-flex items-center gap-2 text-xs text-slate-600">
               <span className="px-2 py-1 rounded bg-slate-100">現在: {fullView ? "24h 全体表示" : "通常表示"}</span>
             </div>
-            <div className="inline-flex border rounded overflow-hidden">
-              <button className={`px-3 py-1 ${canZoom ? "" : "opacity-40 cursor-not-allowed"}`} onClick={() => zoom(-0.25)}>
+            <div
+              className={`inline-flex rounded overflow-hidden border transition-colors ${
+                canZoom ? "border-slate-500 shadow-sm" : "border-slate-200 opacity-60"
+              }`}
+            >
+              <button
+                type="button"
+                className={`px-3 py-1 text-lg font-semibold ${
+                  canZoom ? "text-slate-700 hover:bg-slate-100" : "cursor-not-allowed text-slate-400"
+                }`}
+                onClick={() => zoom(-0.25)}
+                disabled={!canZoom}
+                aria-disabled={!canZoom}
+                title={canZoom ? "ズームアウト" : "24h表示でのみ操作可能"}
+              >
                 -
               </button>
-              <span className="px-2 py-1 text-xs text-slate-600 w-16 text-center">{pxPerMin.toFixed(2)} px/m</span>
-              <button className={`px-3 py-1 ${canZoom ? "" : "opacity-40 cursor-not-allowed"}`} onClick={() => zoom(+0.25)}>
+              <span className={`px-2 py-1 text-xs w-16 text-center ${canZoom ? "text-slate-600" : "text-slate-400"}`}>
+                {pxPerMin.toFixed(2)} px/m
+              </span>
+              <button
+                type="button"
+                className={`px-3 py-1 text-lg font-semibold ${
+                  canZoom ? "text-slate-700 hover:bg-slate-100" : "cursor-not-allowed text-slate-400"
+                }`}
+                onClick={() => zoom(+0.25)}
+                disabled={!canZoom}
+                aria-disabled={!canZoom}
+                title={canZoom ? "ズームイン" : "24h表示でのみ操作可能"}
+              >
                 +
               </button>
             </div>
@@ -629,7 +729,7 @@ export default function VehicleDispatchBoardMock() {
                       key={a.id}
                       duty={a}
                       pxPerMin={pxPerMin}
-                      viewDate={dateStr}
+                      viewDate={viewDate}
                       onClick={() => openDrawer({ type: "duty", data: a, vehicle: v })}
                       isSelected={selected?.type === "duty" && selected?.id === a.id}
                       onMoveDutyToVehicle={(dutyId, fromVehicleId, destVehicleId) => moveDutyByPointer(dutyId, fromVehicleId, destVehicleId)}
@@ -642,7 +742,7 @@ export default function VehicleDispatchBoardMock() {
                         key={b.id}
                         booking={b}
                         pxPerMin={pxPerMin}
-                        viewDate={dateStr}
+                        viewDate={viewDate}
                         onClick={() => openDrawer({ type: "booking", data: b, vehicle: v })}
                         isSelected={selected?.type === "booking" && selected?.id === b.id}
                         resizable={isAppJob(b)}
@@ -691,43 +791,73 @@ export default function VehicleDispatchBoardMock() {
           </div>
         </div>
 
-        <div ref={jobPoolRef} className="mt-3 bg-white rounded-2xl shadow p-3" onDragOver={handleJobPoolDragOver} onDragLeave={handleJobPoolDragLeave} onDrop={handleJobPoolDrop}>
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="font-medium">ジョブプール（未割当）</h2>
-            <span className="text-xs text-slate-500">{jobPool.length} 件</span>
-          </div>
-          {jobPool.length === 0 ? (
-            <div className="text-slate-500 text-sm">未割当の仕事はありません。Excel風入力画面で登録するとここに表示されます。</div>
-          ) : (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {jobPool.map((j) => {
-                const durMin = Math.round((new Date(j.end).getTime() - new Date(j.start).getTime()) / 60000);
-                return (
-                  <div
-                    key={j.id}
-                    className="min-w-[220px] border rounded-xl p-2 hover:bg-slate-50 cursor-grab active:cursor-grabbing"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.effectAllowed = "copyMove";
-                      e.dataTransfer.setData("text/x-job-id", String(j.id));
-                      e.dataTransfer.setData("text/plain", String(j.id));
-                    }}
-                    title="モータープールの車両レーンへドラッグで割当"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="font-medium truncate">{j.title}</div>
-                      <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-700">{j.preferClass}</span>
-                    </div>
-                    <div className="text-xs text-slate-600">
-                      {fmt(j.start)} - {fmt(j.end)}（{durMin}分）
-                    </div>
-                    <div className="text-xs text-slate-600">依頼元：{j.client?.name}</div>
-                  </div>
-                );
-              })}
+        <div className="mt-3 flex items-stretch gap-0">
+          <button
+            type="button"
+            className="w-32 shrink-0 rounded-l-2xl bg-amber-500 px-4 text-lg font-semibold tracking-wide text-white shadow-md hover:bg-amber-500/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+            title="新しいジョブを登録"
+          >
+            新規追加
+          </button>
+          <div
+            ref={jobPoolRef}
+            className="flex-1 bg-white rounded-r-2xl shadow-md p-3"
+            onDragOver={handleJobPoolDragOver}
+            onDragLeave={handleJobPoolDragLeave}
+            onDrop={handleJobPoolDrop}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="font-medium">ジョブプール（未割当）</h2>
+              <span className="text-xs text-slate-500">{jobPool.length} 件</span>
             </div>
-          )}
-          <div className="text-[11px] text-slate-500 mt-2">※ 予約バーをここにドラッグするとジョブプールへ戻せます</div>
+            {jobPool.length === 0 ? (
+              <div className="text-slate-500 text-sm">未割当の仕事はありません。Excel風入力画面で登録するとここに表示されます。</div>
+            ) : (
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {jobPool.map((j) => {
+                  const durMin = Math.round((new Date(j.end).getTime() - new Date(j.start).getTime()) / 60000);
+                  return (
+                    <div
+                      key={j.id}
+                      className="min-w-[220px] border rounded-xl p-2 hover:bg-slate-50 cursor-grab active:cursor-grabbing"
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = "copyMove";
+                        e.dataTransfer.setData("text/x-job-id", String(j.id));
+                        e.dataTransfer.setData("text/plain", String(j.id));
+                      }}
+                      title="モータープールの車両レーンへドラッグで割当"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium truncate">{j.title}</div>
+                        <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-700">{j.preferClass}</span>
+                      </div>
+                      <div className="text-xs text-slate-600">
+                        {fmt(j.start)} - {fmt(j.end)}（{durMin}分）
+                      </div>
+                      <div className="text-xs text-slate-600">依頼元：{j.client?.name}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="text-[11px] text-slate-500 mt-2">※ 予約バーをここにドラッグするとジョブプールへ戻せます</div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-3">
+          <a
+            href="#driver-ledger"
+            className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100"
+          >
+            ドライバー台帳
+          </a>
+          <a
+            href="#vehicle-ledger"
+            className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100"
+          >
+            車両台帳
+          </a>
         </div>
 
         {drawerOpen && (
@@ -1347,7 +1477,13 @@ function BookingBlock({
             {driver.name}（{driver.code}）
           </span>
         ) : (
-          <span className={`text-[10px] px-2 py-0.5 rounded bg-white/90 text-amber-700 ${flashUnassign ? "blink3 border border-amber-500" : "border border-transparent"}`}>ドライバー未割当</span>
+          <span
+            className={`text-[10px] px-2 py-0.5 rounded bg-white/90 text-amber-700 border ${
+              flashUnassign ? "badge-flash border-amber-500" : "border-transparent"
+            }`}
+          >
+            ドライバー未割当
+          </span>
         )}
       </div>
       <div className="flex items-center justify-between gap-2 opacity-95">
