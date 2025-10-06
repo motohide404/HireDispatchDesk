@@ -15,6 +15,7 @@ const BUFFER_MINUTES = 15;
 const RESIZE_STEP_MINUTES = 5;
 const MIN_BOOKING_DURATION_MINUTES = 15;
 const LP_MS = 60;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const VEHICLES = [
   { id: 11, name: "セダンA", plate: "品川300 あ 12-34", class: "sedan" },
@@ -37,12 +38,45 @@ type AppDuty = {
   service: string;
   start: string;
   end: string;
+  is_overnight: boolean;
+  overnight_from_previous_day?: boolean;
+  overnight_to_next_day?: boolean;
 };
 
 const APP_DUTIES_INIT: AppDuty[] = [
-  { id: "A1", vehicleId: 14, driverId: 1, service: "Uber", start: "2025-10-03T08:00:00+09:00", end: "2025-10-03T16:00:00+09:00" },
-  { id: "A2", vehicleId: 12, driverId: null, service: "GO", start: "2025-10-03T06:00:00+09:00", end: "2025-10-03T09:00:00+09:00" },
-  { id: "A3", vehicleId: 12, driverId: 4, service: "nearMe", start: "2025-10-03T20:00:00+09:00", end: "2025-10-03T23:30:00+09:00" }
+  {
+    id: "A1",
+    vehicleId: 14,
+    driverId: 1,
+    service: "Uber",
+    start: "2025-10-03T08:00:00+09:00",
+    end: "2025-10-03T16:00:00+09:00",
+    is_overnight: false,
+    overnight_from_previous_day: false,
+    overnight_to_next_day: false
+  },
+  {
+    id: "A2",
+    vehicleId: 12,
+    driverId: null,
+    service: "GO",
+    start: "2025-10-03T06:00:00+09:00",
+    end: "2025-10-03T09:00:00+09:00",
+    is_overnight: false,
+    overnight_from_previous_day: false,
+    overnight_to_next_day: false
+  },
+  {
+    id: "A3",
+    vehicleId: 12,
+    driverId: 4,
+    service: "nearMe",
+    start: "2025-10-03T20:00:00+09:00",
+    end: "2025-10-03T23:30:00+09:00",
+    is_overnight: false,
+    overnight_from_previous_day: false,
+    overnight_to_next_day: false
+  }
 ];
 
 type BoardBooking = {
@@ -55,17 +89,94 @@ type BoardBooking = {
   end: string;
   status: string;
   note?: string;
+  is_overnight: boolean;
+  overnight_from_previous_day?: boolean;
+  overnight_to_next_day?: boolean;
 };
 
 const isAppJob = (booking: BoardBooking | undefined | null) => booking?.client?.type === "app";
 
 const BOOKINGS: BoardBooking[] = [
-  { id: 201, vehicleId: 11, driverId: 1, client: { type: "個人", name: "山田様" }, title: "羽田→帝国ホテル", start: "2025-10-03T09:30:00+09:00", end: "2025-10-03T11:00:00+09:00", status: "ok" },
-  { id: 202, vehicleId: 11, driverId: null, client: { type: "ホテル", name: "帝国ホテル" }, title: "丸の内→品川(待機)", start: "2025-10-03T12:00:00+09:00", end: "2025-10-03T15:00:00+09:00", status: "warn", note: "ドライバー未割当" },
-  { id: 203, vehicleId: 12, driverId: 2, client: { type: "代理店", name: "ABCトラベル" }, title: "成田→都内(ワゴン)", start: "2025-10-03T10:00:00+09:00", end: "2025-10-03T13:30:00+09:00", status: "ok" },
-  { id: 205, vehicleId: 13, driverId: 3, client: { type: "個人", name: "佐々木様" }, title: "成田→都内 深夜送迎", start: "2025-10-03T22:30:00+09:00", end: "2025-10-04T02:00:00+09:00", status: "ok" },
-  { id: 204, vehicleId: 13, driverId: null, client: { type: "ハイヤー会社", name: "XYZハイヤー" }, title: "銀座→横浜・往復", start: "2025-10-03T18:30:00+09:00", end: "2025-10-03T23:30:00+09:00", status: "hard", note: "休息不足の恐れ" },
-  { id: 206, vehicleId: 12, driverId: 4, client: { type: "個人", name: "前日ナイト" }, title: "前日22:00→当日送迎", start: "2025-10-02T22:00:00+09:00", end: "2025-10-03T02:00:00+09:00", status: "ok" }
+  {
+    id: 201,
+    vehicleId: 11,
+    driverId: 1,
+    client: { type: "個人", name: "山田様" },
+    title: "羽田→帝国ホテル",
+    start: "2025-10-03T09:30:00+09:00",
+    end: "2025-10-03T11:00:00+09:00",
+    status: "ok",
+    is_overnight: false,
+    overnight_from_previous_day: false,
+    overnight_to_next_day: false
+  },
+  {
+    id: 202,
+    vehicleId: 11,
+    driverId: null,
+    client: { type: "ホテル", name: "帝国ホテル" },
+    title: "丸の内→品川(待機)",
+    start: "2025-10-03T12:00:00+09:00",
+    end: "2025-10-03T15:00:00+09:00",
+    status: "warn",
+    note: "ドライバー未割当",
+    is_overnight: false,
+    overnight_from_previous_day: false,
+    overnight_to_next_day: false
+  },
+  {
+    id: 203,
+    vehicleId: 12,
+    driverId: 2,
+    client: { type: "代理店", name: "ABCトラベル" },
+    title: "成田→都内(ワゴン)",
+    start: "2025-10-03T10:00:00+09:00",
+    end: "2025-10-03T13:30:00+09:00",
+    status: "ok",
+    is_overnight: false,
+    overnight_from_previous_day: false,
+    overnight_to_next_day: false
+  },
+  {
+    id: 205,
+    vehicleId: 13,
+    driverId: 3,
+    client: { type: "個人", name: "佐々木様" },
+    title: "成田→都内 深夜送迎",
+    start: "2025-10-03T22:30:00+09:00",
+    end: "2025-10-04T02:00:00+09:00",
+    status: "ok",
+    is_overnight: true,
+    overnight_from_previous_day: false,
+    overnight_to_next_day: true
+  },
+  {
+    id: 204,
+    vehicleId: 13,
+    driverId: null,
+    client: { type: "ハイヤー会社", name: "XYZハイヤー" },
+    title: "銀座→横浜・往復",
+    start: "2025-10-03T18:30:00+09:00",
+    end: "2025-10-03T23:30:00+09:00",
+    status: "hard",
+    note: "休息不足の恐れ",
+    is_overnight: false,
+    overnight_from_previous_day: false,
+    overnight_to_next_day: false
+  },
+  {
+    id: 206,
+    vehicleId: 12,
+    driverId: 4,
+    client: { type: "個人", name: "前日ナイト" },
+    title: "前日22:00→当日送迎",
+    start: "2025-10-02T22:00:00+09:00",
+    end: "2025-10-03T02:00:00+09:00",
+    status: "ok",
+    is_overnight: true,
+    overnight_from_previous_day: true,
+    overnight_to_next_day: false
+  }
 ];
 
 const UNASSIGNED_JOBS = [
@@ -110,10 +221,10 @@ export function overlap(aStart: string, aEnd: string, bStart: string, bEnd: stri
 
 export function rangeForDay(startISO: string, endISO: string, viewDate: string, pxPerMin: number) {
   const vs = new Date(`${viewDate}T00:00:00+09:00`);
-  const ve = new Date(vs.getTime() + 24 * 60 * 60 * 1000);
+  const ve = new Date(vs.getTime() + DAY_MS);
   let s = new Date(startISO);
   let e = new Date(endISO);
-  if (e <= s) e = new Date(e.getTime() + 24 * 60 * 60 * 1000);
+  if (e <= s) e = new Date(e.getTime() + DAY_MS);
   const leftClip = s < vs;
   const rightClip = e > ve;
   const clipS = s < vs ? vs : s;
@@ -138,6 +249,36 @@ export function crossWidth(startMin: number, endMin: number, pxPerMin: number) {
   const width = Math.max(0, e - s) * pxPerMin;
   const left = Math.max(0, startMin) * pxPerMin;
   return { left, width };
+}
+
+function computeOvernightInfo(startISO: string, endISO: string, viewDate: string) {
+  const start = new Date(startISO);
+  const rawEnd = new Date(endISO);
+  let normalizedEnd = new Date(rawEnd);
+  if (normalizedEnd <= start) normalizedEnd = new Date(normalizedEnd.getTime() + DAY_MS);
+  const viewStart = new Date(`${viewDate}T00:00:00+09:00`);
+  const viewEnd = new Date(viewStart.getTime() + DAY_MS);
+  const overnightFromPreviousDay = start < viewStart && normalizedEnd > viewStart;
+  const overnightToNextDay = normalizedEnd > viewEnd && start < viewEnd;
+  const isOvernight = overnightFromPreviousDay || overnightToNextDay;
+  return {
+    is_overnight: isOvernight,
+    overnight_from_previous_day: overnightFromPreviousDay,
+    overnight_to_next_day: overnightToNextDay
+  };
+}
+
+function buildOvernightLabel(
+  isOvernight: boolean,
+  overnightFromPreviousDay?: boolean,
+  overnightToNextDay?: boolean
+) {
+  if (!isOvernight) return "";
+  const parts: string[] = [];
+  if (overnightFromPreviousDay) parts.push("←前");
+  if (overnightToNextDay) parts.push("→翌");
+  if (parts.length === 0) return "（夜間）";
+  return `（${parts.join("・")}）`;
 }
 
 function bookingToJob(b: BoardBooking) {
@@ -387,7 +528,8 @@ export default function VehicleDispatchBoardMock() {
         alert(`予約は最低${MIN_BOOKING_DURATION_MINUTES}分必要です`);
         return prev;
       }
-      const cand: BoardBooking = { ...cur, start: nextStartIso, end: nextEndIso };
+      const overnightMeta = computeOvernightInfo(nextStartIso, nextEndIso, viewDate);
+      const cand: BoardBooking = { ...cur, ...overnightMeta, start: nextStartIso, end: nextEndIso };
       const others = prev.filter((x) => x.id !== bookingId);
       if (isSameVehicleOverlap(others, cand)) {
         alert("同じ車両の他予約と時間が重複しています");
@@ -469,7 +611,10 @@ export default function VehicleDispatchBoardMock() {
         alert(`アプリ稼働は最低${MIN_BOOKING_DURATION_MINUTES}分必要です`);
         return prev;
       }
-      const cand = { ...cur, start: toJstIso(snappedStart), end: toJstIso(snappedEnd) };
+      const nextStart = toJstIso(snappedStart);
+      const nextEnd = toJstIso(snappedEnd);
+      const overnightMeta = computeOvernightInfo(nextStart, nextEnd, viewDate);
+      const cand = { ...cur, ...overnightMeta, start: nextStart, end: nextEnd };
       const others = prev.filter((x) => x.id !== dutyId);
       if (others.some((o) => o.vehicleId === cand.vehicleId && overlap(cand.start, cand.end, o.start, o.end))) {
         alert("他のアプリ稼働と重複のため時間調整できません");
@@ -517,7 +662,7 @@ export default function VehicleDispatchBoardMock() {
     if (!job) return;
     const start = new Date(job.start);
     const end = new Date(job.end);
-    const newBooking: BoardBooking = {
+    const baseBooking = {
       id: ++bookingIdRef.current,
       vehicleId,
       driverId: null,
@@ -525,9 +670,11 @@ export default function VehicleDispatchBoardMock() {
       title: job.title,
       start: toJstIso(start),
       end: toJstIso(end),
-      status: "warn",
+      status: "warn" as const,
       note: "ドライバー未割当（ジョブから配置：カード時刻にスナップ）"
     };
+    const overnightMeta = computeOvernightInfo(baseBooking.start, baseBooking.end, viewDate);
+    const newBooking: BoardBooking = { ...baseBooking, ...overnightMeta };
     if (isSameVehicleOverlap(bookings, newBooking)) {
       alert("時間重複のため配置できません");
       return;
@@ -769,6 +916,9 @@ export default function VehicleDispatchBoardMock() {
                       duty={a}
                       pxPerMin={pxPerMin}
                       viewDate={viewDate}
+                      isOvernight={a.is_overnight}
+                      overnightFromPreviousDay={a.overnight_from_previous_day}
+                      overnightToNextDay={a.overnight_to_next_day}
                       onClick={() => openDrawer({ type: "duty", data: a, vehicle: v })}
                       isSelected={selected?.type === "duty" && selected?.id === a.id}
                       onMoveDutyToVehicle={(dutyId, fromVehicleId, destVehicleId) => moveDutyByPointer(dutyId, fromVehicleId, destVehicleId)}
@@ -782,6 +932,9 @@ export default function VehicleDispatchBoardMock() {
                         booking={b}
                         pxPerMin={pxPerMin}
                         viewDate={viewDate}
+                        isOvernight={b.is_overnight}
+                        overnightFromPreviousDay={b.overnight_from_previous_day}
+                        overnightToNextDay={b.overnight_to_next_day}
                         onClick={() => openDrawer({ type: "booking", data: b, vehicle: v })}
                         isSelected={selected?.type === "booking" && selected?.id === b.id}
                         resizable={isAppJob(b)}
@@ -943,7 +1096,10 @@ function AppDutyBlock({
   isSelected,
   onMoveDutyToVehicle,
   onDriverDrop,
-  onResize
+  onResize,
+  isOvernight = false,
+  overnightFromPreviousDay = false,
+  overnightToNextDay = false
 }: {
   duty: AppDuty;
   pxPerMin: number;
@@ -953,6 +1109,9 @@ function AppDutyBlock({
   onMoveDutyToVehicle: (dutyId: string, fromVehicleId: number, destVehicleId: number) => void;
   onDriverDrop: (dutyId: string, driverId: number) => boolean;
   onResize: (dutyId: string, nextStart: string, nextEnd: string) => boolean;
+  isOvernight?: boolean;
+  overnightFromPreviousDay?: boolean;
+  overnightToNextDay?: boolean;
 }) {
   const [allowDrag, setAllowDrag] = useState(true);
   const [draftRange, setDraftRange] = useState<DraftRange | null>(null);
@@ -973,7 +1132,10 @@ function AppDutyBlock({
 
   const displayStart = draftRange?.start ?? duty.start;
   const displayEnd = draftRange?.end ?? duty.end;
-  const { left, width, clipL, clipR, overnight } = rangeForDay(displayStart, displayEnd, viewDate, pxPerMin);
+  const { left, width, clipL, clipR } = rangeForDay(displayStart, displayEnd, viewDate, pxPerMin);
+  const showLeftFlag = Boolean((isOvernight && clipL) || overnightFromPreviousDay);
+  const showRightFlag = Boolean((isOvernight && clipR) || overnightToNextDay);
+  const overnightLabel = buildOvernightLabel(isOvernight, overnightFromPreviousDay, overnightToNextDay);
   if (width <= 0) return null;
   const driver = duty.driverId != null ? driverMap.get(duty.driverId) ?? null : null;
   const driverBadgeRef = useFlashOnChange<HTMLSpanElement>(driver ? `${driver.id}-${driver.name}` : "", 1500);
@@ -1186,7 +1348,7 @@ function AppDutyBlock({
         e.dataTransfer.setData("text/plain", String(duty.id));
       }}
     >
-      {clipL && <EdgeFlag pos="left" />}
+      {showLeftFlag && <EdgeFlag pos="left" />}
       <div
         className="absolute inset-y-0 left-0 w-2 cursor-ew-resize flex items-center justify-center"
         onPointerDown={beginResize("start")}
@@ -1213,11 +1375,11 @@ function AppDutyBlock({
       <div className="flex items-end justify-between gap-2 pr-6">
         <div className="truncate">
           {startLabel}-{endLabel}
-          {overnight ? "（→翌）" : ""}
+          {overnightLabel}
         </div>
         <div className="ml-auto text-[10px] bg-white/60 px-1 rounded">アプリ稼働</div>
       </div>
-      {clipR && <EdgeFlag pos="right" />}
+      {showRightFlag && <EdgeFlag pos="right" />}
       <div
         className="absolute inset-y-0 right-0 w-2 cursor-ew-resize flex items-center justify-center"
         onPointerDown={beginResize("end")}
@@ -1254,7 +1416,10 @@ function BookingBlock({
   flashUnassign,
   onMoveToVehicle,
   onResize,
-  resizable = true
+  resizable = true,
+  isOvernight = false,
+  overnightFromPreviousDay = false,
+  overnightToNextDay = false
 }: {
   booking: BoardBooking;
   pxPerMin: number;
@@ -1268,6 +1433,9 @@ function BookingBlock({
   onMoveToVehicle: (bookingId: number, fromVehicleId: number, destVehicleId: number, originalDriverId: number | null) => void;
   onResize: (bookingId: number, nextStart: string, nextEnd: string) => boolean;
   resizable?: boolean;
+  isOvernight?: boolean;
+  overnightFromPreviousDay?: boolean;
+  overnightToNextDay?: boolean;
 }) {
   const [allowDrag, setAllowDrag] = useState(true);
   const [draftRange, setDraftRange] = useState<DraftRange | null>(null);
@@ -1296,7 +1464,10 @@ function BookingBlock({
 
   const displayStart = draftRange?.start ?? booking.start;
   const displayEnd = draftRange?.end ?? booking.end;
-  const { left, width, clipL, clipR, overnight } = rangeForDay(displayStart, displayEnd, viewDate, pxPerMin);
+  const { left, width, clipL, clipR } = rangeForDay(displayStart, displayEnd, viewDate, pxPerMin);
+  const showLeftFlag = Boolean((isOvernight && clipL) || overnightFromPreviousDay);
+  const showRightFlag = Boolean((isOvernight && clipR) || overnightToNextDay);
+  const overnightLabel = buildOvernightLabel(isOvernight, overnightFromPreviousDay, overnightToNextDay);
   if (width <= 0) return null;
   const color = booking.status === "ok" ? "bg-green-500/80" : booking.status === "warn" ? "bg-yellow-500/80" : "bg-red-500/80";
   const ring = booking.status === "ok" ? "ring-green-400" : booking.status === "warn" ? "ring-yellow-400" : "ring-red-400";
@@ -1505,7 +1676,7 @@ function BookingBlock({
       draggable={draggable && allowDrag}
       onDragStart={onDragStart}
     >
-      {clipL && <EdgeFlag pos="left" />}
+      {showLeftFlag && <EdgeFlag pos="left" />}
       <div className="flex items-center justify-between gap-2">
         <div className="font-semibold truncate">{booking.title}</div>
         {driver ? (
@@ -1528,11 +1699,11 @@ function BookingBlock({
       <div className="flex items-center justify-between gap-2 opacity-95">
         <div className="truncate">
           {fmt(displayStart)} - {fmt(displayEnd)}
-          {overnight ? "（→翌）" : ""}
+          {overnightLabel}
         </div>
         <div className="truncate">{booking.client?.name}</div>
       </div>
-      {clipR && <EdgeFlag pos="right" />}
+      {showRightFlag && <EdgeFlag pos="right" />}
       {resizable && (
         <>
           <div
