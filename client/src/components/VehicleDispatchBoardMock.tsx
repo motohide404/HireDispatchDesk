@@ -369,6 +369,19 @@ export default function VehicleDispatchBoardMock() {
   const [viewDate, setViewDate] = useState("2025-10-03");
   const dateInputRef = useRef<HTMLInputElement | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const driverSummaries = useMemo(
+    () =>
+      DRIVERS.map((driver) => {
+        const todaysAssignments = bookings
+          .filter((b) => b.driverId === driver.id)
+          .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+        return {
+          driver,
+          assignments: todaysAssignments
+        };
+      }),
+    [bookings]
+  );
 
   const viewDateObj = useMemo(() => new Date(`${viewDate}T00:00:00+09:00`), [viewDate]);
   const viewDateDisplay = useMemo(() => {
@@ -1051,6 +1064,55 @@ export default function VehicleDispatchBoardMock() {
             車両台帳
           </a>
         </div>
+
+        <section id="driver-ledger" className="driver-ledger-section">
+          <div className="driver-ledger-header">
+            <h2>ドライバー台帳</h2>
+            <p>
+              現在の割当状況と稼働回数を確認できます。各カードは当日の予約情報からリアルタイムに集計され、スクロール後もアンカー位置がわかるようにマージンを調整しています。
+            </p>
+          </div>
+          <div className="driver-ledger-grid">
+            {driverSummaries.map(({ driver, assignments }) => (
+              <article key={driver.id} className="driver-card">
+                <header className="driver-card__header">
+                  <div>
+                    <div className="driver-card__name">{driver.name}</div>
+                    <div className="driver-card__code">{driver.code}</div>
+                  </div>
+                  <div className="driver-card__count">本日 {assignments.length} 件</div>
+                </header>
+                <dl className="driver-card__meta">
+                  <div className="driver-card__row">
+                    <dt className="driver-card__label">割当状況</dt>
+                    <dd className="driver-card__value">
+                      {assignments.length === 0 ? (
+                        <span className="driver-card__empty">未割当</span>
+                      ) : (
+                        <ul className="driver-card__assignments">
+                          {assignments.map((assignment) => (
+                            <li key={assignment.id} className="driver-card__assignment">
+                              <span className="driver-card__time">
+                                {fmt(assignment.start)} - {fmt(assignment.end)}
+                              </span>
+                              <span className="driver-card__title">{assignment.title}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </dd>
+                  </div>
+                  <div className="driver-card__row">
+                    <dt className="driver-card__label">稼働回数</dt>
+                    <dd className="driver-card__value">
+                      <span className="driver-card__highlight">{driver.extUsed}</span> 回
+                    </dd>
+                  </div>
+                </dl>
+              </article>
+            ))}
+          </div>
+        </section>
 
         {drawerOpen && (
           <Drawer isMobile={isMobile} onClose={closeDrawer}>
