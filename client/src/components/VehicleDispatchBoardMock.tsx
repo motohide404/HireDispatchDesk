@@ -1193,12 +1193,12 @@ export default function VehicleDispatchBoardMock() {
             <ResizeHandle value={driverWidth} setValue={setDriverWidth} min={DRIVER_POOL_WIDTH_MIN} max={DRIVER_POOL_WIDTH_MAX} side="right" />
           </div>
 
-          <div ref={centerRef} className={`flex-1 bg-white rounded-2xl shadow p-3 relative overflow-y-auto ${fullView ? "overflow-x-hidden" : "overflow-x-auto"}`}>
+          <div className="relative flex-1">
             {hasPrevOvernight ? (
               <button
                 type="button"
                 onClick={() => shiftViewDate(-1)}
-                className="absolute left-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                className="pointer-events-auto absolute left-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
                 style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
                 aria-label="前日の夜間予約へ移動"
                 title="前日の夜間予約へ移動"
@@ -1221,7 +1221,7 @@ export default function VehicleDispatchBoardMock() {
               <button
                 type="button"
                 onClick={() => shiftViewDate(1)}
-                className="absolute right-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                className="pointer-events-auto absolute right-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
                 style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
                 aria-label="翌日の夜間予約へ移動"
                 title="翌日の夜間予約へ移動"
@@ -1240,17 +1240,21 @@ export default function VehicleDispatchBoardMock() {
                 <span>翌</span>
               </button>
             ) : null}
-            <div className="flex items-center justify-between mb-2 sticky left-0 top-0 z-10 bg-white pr-2">
-              <h2 className="font-medium">モータープール</h2>
-              <span className="text-xs text-slate-500">00:00〜24:00（{pxPerMin.toFixed(2)} px/min）</span>
-            </div>
+            <div
+              ref={centerRef}
+              className={`h-full w-full bg-white rounded-2xl shadow p-3 relative overflow-y-auto ${fullView ? "overflow-x-hidden" : "overflow-x-auto"}`}
+            >
+              <div className="flex items-center justify-between mb-2 sticky left-0 top-0 z-10 bg-white pr-2">
+                <h2 className="font-medium">モータープール</h2>
+                <span className="text-xs text-slate-500">00:00〜24:00（{pxPerMin.toFixed(2)} px/min）</span>
+              </div>
 
-            <div className="relative" style={{ width: CONTENT_WIDTH }}>
-              <GridOverlay hourPx={60 * pxPerMin} />
-              {currentTimePosition.visible ? (
-                <div
-                  className="pointer-events-none absolute inset-y-0 w-[2px] bg-amber-500"
-                  style={{ left: 0, transform: `translateX(${currentTimePosition.x}px)` }}
+              <div className="relative" style={{ width: CONTENT_WIDTH }}>
+                <GridOverlay hourPx={60 * pxPerMin} />
+                {currentTimePosition.visible ? (
+                  <div
+                    className="pointer-events-none absolute inset-y-0 w-[2px] bg-amber-500"
+                    style={{ left: 0, transform: `translateX(${currentTimePosition.x}px)` }}
                 />
               ) : null}
 
@@ -1332,6 +1336,7 @@ export default function VehicleDispatchBoardMock() {
                     <div className="absolute left-2 top-1 text-[11px] text-slate-500 bg-white/80 rounded px-1">{v.name}</div>
                   </div>
                 ))}
+              </div>
               </div>
             </div>
           </div>
