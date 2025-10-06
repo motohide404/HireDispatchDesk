@@ -618,6 +618,27 @@ export default function VehicleDispatchBoardMock() {
     return map;
   }, [appDuties]);
 
+  const { hasPrevOvernight, hasNextOvernight } = useMemo(() => {
+    let prev = false;
+    let next = false;
+    const inspect = (
+      item: Pick<BoardBooking, "start" | "end"> & {
+        overnight_from_previous_day?: boolean;
+        overnight_to_next_day?: boolean;
+      }
+    ) => {
+      if (prev && next) return;
+      const meta = computeOvernightInfo(item.start, item.end, viewDate);
+      const prevFlag = item.overnight_from_previous_day ?? meta.overnight_from_previous_day;
+      const nextFlag = item.overnight_to_next_day ?? meta.overnight_to_next_day;
+      if (prevFlag) prev = true;
+      if (nextFlag) next = true;
+    };
+    bookings.forEach(inspect);
+    appDuties.forEach(inspect);
+    return { hasPrevOvernight: prev, hasNextOvernight: next };
+  }, [bookings, appDuties, viewDate]);
+
   const canZoom = fullView;
   const zoom = (delta: number) => {
     if (!canZoom) return;
@@ -1133,6 +1154,30 @@ export default function VehicleDispatchBoardMock() {
           </div>
 
           <div ref={centerRef} className={`flex-1 bg-white rounded-2xl shadow p-3 relative overflow-y-auto ${fullView ? "overflow-x-hidden" : "overflow-x-auto"}`}>
+            {hasPrevOvernight ? (
+              <button
+                type="button"
+                onClick={() => shiftViewDate(-1)}
+                className="absolute left-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
+                aria-label="前日の夜間予約へ移動"
+                title="前日の夜間予約へ移動"
+              >
+                ←前
+              </button>
+            ) : null}
+            {hasNextOvernight ? (
+              <button
+                type="button"
+                onClick={() => shiftViewDate(1)}
+                className="absolute right-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
+                aria-label="翌日の夜間予約へ移動"
+                title="翌日の夜間予約へ移動"
+              >
+                →翌
+              </button>
+            ) : null}
             <div className="flex items-center justify-between mb-2 sticky left-0 top-0 z-10 bg-white pr-2">
               <h2 className="font-medium">モータープール</h2>
               <span className="text-xs text-slate-500">00:00〜24:00（{pxPerMin.toFixed(2)} px/min）</span>
