@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useFlashOnChange } from "../lib/useFlashOnChange";
-import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import type { DragEvent as ReactDragEvent, FormEvent, ReactNode } from "react";
 
 import "./VehicleDispatchBoardMock.css";
 
@@ -30,11 +30,29 @@ const VEHICLE_CLASS_LABELS: Record<string, string> = {
   van: "ワゴン",
   luxury: "ハイグレード"
 };
-const DRIVERS = [
-  { id: 1, name: "田中", code: "D-01", extUsed: 2 },
-  { id: 2, name: "佐藤", code: "D-02", extUsed: 0 },
-  { id: 3, name: "鈴木", code: "D-03", extUsed: 6 },
-  { id: 4, name: "高橋", code: "D-04", extUsed: 1 }
+type DriverInfo = {
+  id: number;
+  name: string;
+  code: string;
+  extUsed: number;
+  monthlyJobs: number;
+  currentDispatchNumber: number;
+};
+
+type JobDraft = {
+  title: string;
+  clientType: string;
+  clientName: string;
+  startTime: string;
+  endTime: string;
+  preferClass: string;
+};
+
+const DRIVERS: DriverInfo[] = [
+  { id: 1, name: "田中", code: "D-01", extUsed: 2, monthlyJobs: 38, currentDispatchNumber: 4 },
+  { id: 2, name: "佐藤", code: "D-02", extUsed: 0, monthlyJobs: 42, currentDispatchNumber: 6 },
+  { id: 3, name: "鈴木", code: "D-03", extUsed: 6, monthlyJobs: 35, currentDispatchNumber: 3 },
+  { id: 4, name: "高橋", code: "D-04", extUsed: 1, monthlyJobs: 47, currentDispatchNumber: 5 }
 ];
 const driverMap = new Map(DRIVERS.map((d) => [d.id, d]));
 
@@ -422,6 +440,15 @@ export default function VehicleDispatchBoardMock() {
   const [bookings, setBookings] = useState<BoardBooking[]>(BOOKINGS);
   const [appDuties, setAppDuties] = useState<AppDuty[]>(APP_DUTIES_INIT);
   const [jobPool, setJobPool] = useState(UNASSIGNED_JOBS);
+  const [jobFormOpen, setJobFormOpen] = useState(false);
+  const [jobDraft, setJobDraft] = useState({
+    title: "",
+    clientType: "個人",
+    clientName: "",
+    startTime: "09:00",
+    endTime: "10:00",
+    preferClass: "sedan"
+  });
   const [flashUnassignId, setFlashUnassignId] = useState<number | null>(null);
   const bookingIdRef = useRef(500);
   const attachmentUrlsRef = useRef<Map<string, string>>(new Map());
@@ -532,10 +559,65 @@ export default function VehicleDispatchBoardMock() {
       };
     });
   }, [appDuties, bookings, viewDateObj]);
+  const totalMonthlyJobs = useMemo(
+    () => DRIVERS.reduce((acc, driver) => acc + driver.monthlyJobs, 0),
+    []
+  );
   const shiftViewDate = (delta: number) => {
     const next = new Date(viewDateObj);
     next.setDate(next.getDate() + delta);
     setViewDate(`${next.getFullYear()}-${pad2(next.getMonth() + 1)}-${pad2(next.getDate())}`);
+  };
+  const resetJobDraft = () => {
+    setJobDraft({
+      title: "",
+      clientType: "個人",
+      clientName: "",
+      startTime: "09:00",
+      endTime: "10:00",
+      preferClass: "sedan"
+    });
+  };
+  const openJobForm = () => {
+    resetJobDraft();
+    setJobFormOpen(true);
+  };
+  const closeJobForm = () => setJobFormOpen(false);
+  const handleJobDraftChange = (field: keyof JobDraft, value: string) => {
+    setJobDraft((prev) => ({ ...prev, [field]: value }));
+  };
+  const handleCreateJob = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedTitle = jobDraft.title.trim();
+    const trimmedClientName = jobDraft.clientName.trim();
+    if (!trimmedTitle) {
+      alert("ジョブ名を入力してください");
+      return;
+    }
+    if (!trimmedClientName) {
+      alert("顧客名を入力してください");
+      return;
+    }
+    const startDate = new Date(`${viewDate}T${jobDraft.startTime || "00:00"}:00+09:00`);
+    let endDate = new Date(`${viewDate}T${jobDraft.endTime || "00:00"}:00+09:00`);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      alert("開始・終了時刻を正しく入力してください");
+      return;
+    }
+    if (endDate <= startDate) {
+      endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+    }
+    const newJob = {
+      id: `J${Date.now()}`,
+      title: trimmedTitle,
+      client: { type: jobDraft.clientType.trim() || "その他", name: trimmedClientName },
+      start: toJstIso(startDate),
+      end: toJstIso(endDate),
+      preferClass: jobDraft.preferClass || "sedan"
+    };
+    setJobPool((prev) => [...prev, newJob]);
+    resetJobDraft();
+    setJobFormOpen(false);
   };
   const openDatePicker = () => {
     const input = dateInputRef.current;
@@ -1215,15 +1297,6 @@ export default function VehicleDispatchBoardMock() {
                   <div
                     className="pointer-events-none absolute inset-y-0 w-[2px] bg-amber-500"
                     style={{ left: 0, transform: `translateX(${currentTimePosition.x}px)` }}
-                />
-              ) : null}
-
-              <div className="relative" style={{ width: CONTENT_WIDTH }}>
-                <GridOverlay hourPx={60 * pxPerMin} />
-                {currentTimePosition.visible ? (
-                  <div
-                    className="pointer-events-none absolute inset-y-0 w-[2px] bg-amber-500"
-                    style={{ left: 0, transform: `translateX(${currentTimePosition.x}px)` }}
                   />
                 ) : null}
 
@@ -1319,6 +1392,7 @@ export default function VehicleDispatchBoardMock() {
             type="button"
             className="w-32 shrink-0 rounded-l-2xl bg-amber-500 px-4 text-lg font-semibold tracking-wide text-white shadow-md hover:bg-amber-500/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
             title="新しいジョブを登録"
+            onClick={openJobForm}
           >
             新規追加
           </button>
@@ -1370,177 +1444,181 @@ export default function VehicleDispatchBoardMock() {
 
         <div className="mt-4 flex flex-wrap gap-3">
           <a
-            href="#driver-ledger"
+            href="#driver-info"
             className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100"
           >
-            ドライバー台帳
+            ドライバー情報
           </a>
           <a
-            href="#vehicle-ledger"
+            href="#vehicle-info"
             className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100"
           >
-            車両台帳
+            車両情報
+          </a>
+          <a
+            href="#customer-info"
+            className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100"
+          >
+            顧客情報
           </a>
         </div>
 
         <div className="mt-8 space-y-8">
-          <section id="driver-ledger" className="scroll-mt-24">
+          <section id="driver-info" className="scroll-mt-24">
             <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
               <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 px-5 py-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-800">ドライバー台帳</h2>
+                  <h2 className="text-lg font-semibold text-slate-800">ドライバー情報</h2>
                   <p className="text-xs text-slate-500">{viewDateDisplay} の稼働サマリー</p>
                 </div>
-                <span className="text-xs text-slate-500">{driverDailySummaries.length} 名</span>
+                <div className="text-right text-xs text-slate-500 space-y-1">
+                  <div>登録ドライバー {driverDailySummaries.length} 名</div>
+                  <div>今月の配車総数 {totalMonthlyJobs} 件</div>
+                </div>
               </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        ドライバー
-                      </th>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        担当状況
-                      </th>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        稼働時間
-                      </th>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        メモ
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700">
-                    {driverDailySummaries.map((summary) => {
-                      const { driver, bookingCount, dutyCount, mergedIntervals, busyMinutes } = summary;
-                      const totalAssignments = bookingCount + dutyCount;
-                      const statusLabel = totalAssignments > 0 ? "稼働中" : "待機";
-                      const firstInterval = mergedIntervals[0];
-                      const lastInterval = mergedIntervals[mergedIntervals.length - 1];
-                      return (
-                        <tr key={driver.id} className="even:bg-slate-50/60">
-                          <td className="px-5 py-3 align-top">
-                            <div className="font-medium text-slate-800">{driver.name}</div>
-                            <div className="text-xs text-slate-500">{driver.code}</div>
-                          </td>
-                          <td className="px-5 py-3 align-top">
-                            <div>
-                              予約 {bookingCount} 件 / アプリ {dutyCount} 件
-                            </div>
-                            <div className="text-xs text-slate-500">{statusLabel}</div>
-                          </td>
-                          <td className="px-5 py-3 align-top">
-                            {busyMinutes > 0 && firstInterval && lastInterval ? (
-                              <div className="space-y-1">
-                                <div>{formatMinutesLabel(busyMinutes)}</div>
-                                <div className="text-xs text-slate-500">
-                                  {formatTimeInJst(firstInterval.start)}〜{formatTimeInJst(lastInterval.end)}
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="text-slate-500">終日空き</div>
-                            )}
-                          </td>
-                          <td className="px-5 py-3 align-top text-xs text-slate-500">
-                            延長使用 {driver.extUsed}/7
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 xl:grid-cols-4">
+                {driverDailySummaries.map((summary) => {
+                  const { driver, bookingCount, dutyCount, mergedIntervals, busyMinutes } = summary;
+                  const totalAssignments = bookingCount + dutyCount;
+                  const statusLabel = totalAssignments > 0 ? "稼働中" : "待機";
+                  const firstInterval = mergedIntervals[0];
+                  const lastInterval = mergedIntervals[mergedIntervals.length - 1];
+                  const activeWindow = busyMinutes > 0 && firstInterval && lastInterval
+                    ? `${formatTimeInJst(firstInterval.start)}〜${formatTimeInJst(lastInterval.end)}`
+                    : null;
+                  return (
+                    <div
+                      key={driver.id}
+                      className="flex h-full flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50/40 p-4 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-base font-semibold text-slate-800">{driver.name}</div>
+                          <div className="text-xs text-slate-500">{driver.code}</div>
+                        </div>
+                        <div className="text-right text-xs text-slate-500">
+                          <div className="inline-flex items-center justify-center rounded-full bg-slate-800/80 px-2 py-0.5 text-[11px] font-semibold text-white">
+                            第{driver.currentDispatchNumber}回</div>
+                          <div className="mt-1">今月 {driver.monthlyJobs} 件</div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 text-xs text-slate-600">
+                        <div className="space-y-1">
+                          <div className="text-[11px] uppercase tracking-wide text-slate-500">担当状況</div>
+                          <div className="text-sm font-semibold text-slate-800">{statusLabel}</div>
+                          <div>予約 {bookingCount} 件</div>
+                          <div>アプリ {dutyCount} 件</div>
+                        </div>
+                        <div className="space-y-1 text-right">
+                          <div className="text-[11px] uppercase tracking-wide text-slate-500">稼働時間</div>
+                          <div className="text-sm font-semibold text-slate-800">
+                            {busyMinutes > 0 ? formatMinutesLabel(busyMinutes) : "終日空き"}
+                          </div>
+                          {activeWindow ? <div>{activeWindow}</div> : <div>次空き：終日</div>}
+                          <div>延長使用 {driver.extUsed}/7</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </section>
 
-          <section id="vehicle-ledger" className="scroll-mt-24">
+          <section id="vehicle-info" className="scroll-mt-24">
             <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
               <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 px-5 py-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-800">車両台帳</h2>
-                  <p className="text-xs text-slate-500">車両ごとの予約・稼働状況</p>
+                  <h2 className="text-lg font-semibold text-slate-800">車両情報</h2>
+                  <p className="text-xs text-slate-500">
+                    車検証・整備履歴・事故記録などを管理する専用ページへの入り口です。
+                  </p>
                 </div>
-                <span className="text-xs text-slate-500">{vehicleDailySummaries.length} 台</span>
+                <div className="text-right text-xs text-slate-500 space-y-1">
+                  <div>登録車両 {vehicleDailySummaries.length} 台</div>
+                  <div>本日稼働中 {vehicleDailySummaries.filter((summary) => summary.busyMinutes > 0).length} 台</div>
+                </div>
               </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        車両
-                      </th>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        クラス
-                      </th>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        予約 / アプリ
-                      </th>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        稼働状況
-                      </th>
-                      <th scope="col" className="px-5 py-3 text-left font-semibold">
-                        空き時間
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700">
-                    {vehicleDailySummaries.map((summary) => {
-                      const { vehicle, bookings: vBookings, duties, mergedIntervals, busyMinutes, freeMinutes, freeSlots, longestFreeMinutes, utilization } = summary;
-                      const firstInterval = mergedIntervals[0];
-                      const lastInterval = mergedIntervals[mergedIntervals.length - 1];
-                      const utilizationPercent = Math.round(Math.min(Math.max(utilization * 100, 0), 100));
-                      const classLabel = VEHICLE_CLASS_LABELS[vehicle.class as keyof typeof VEHICLE_CLASS_LABELS] ?? vehicle.class;
-                      return (
-                        <tr key={vehicle.id} className="even:bg-slate-50/60">
-                          <td className="px-5 py-3 align-top">
-                            <div className="font-medium text-slate-800">{vehicle.name}</div>
-                            <div className="text-xs text-slate-500">{vehicle.plate}</div>
-                          </td>
-                          <td className="px-5 py-3 align-top">
-                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                              {classLabel}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3 align-top">
-                            <div>予約 {vBookings.length} 件</div>
-                            <div>アプリ {duties.length} 件</div>
-                          </td>
-                          <td className="px-5 py-3 align-top">
-                            {busyMinutes > 0 && firstInterval && lastInterval ? (
-                              <div className="space-y-1">
-                                <div>{formatMinutesLabel(busyMinutes)}</div>
-                                <div className="text-xs text-slate-500">
-                                  {formatTimeInJst(firstInterval.start)}〜{formatTimeInJst(lastInterval.end)}
-                                </div>
-                                <div className="text-xs text-slate-500">稼働率 {utilizationPercent}%</div>
-                              </div>
-                            ) : (
-                              <div className="text-slate-500">終日空き</div>
-                            )}
-                          </td>
-                          <td className="px-5 py-3 align-top">
-                            <div>{formatMinutesLabel(freeMinutes)}</div>
-                            {freeSlots.length > 0 ? (
-                              <div className="space-y-1 text-xs text-slate-500">
-                                <div>
-                                  空き枠 {freeSlots.length} 件 / 最大 {formatMinutesLabel(longestFreeMinutes)}
-                                </div>
-                                <div>{summarizeFreeSlots(freeSlots)}</div>
-                              </div>
-                            ) : (
-                              <div className="text-xs text-slate-500">空き枠なし</div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="space-y-4 px-5 py-5 text-sm text-slate-700">
+                <p>
+                  配車ボードでは概要のみを確認し、詳細は別ページで登録・更新します。車両ごとの点検日や車検期限、事故歴、添付資料などを整理できるワークスペースを想定しています。
+                </p>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <dl className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-wide text-slate-500">本日の予約件数</dt>
+                      <dd className="text-lg font-semibold text-slate-800">
+                        {vehicleDailySummaries.reduce((acc, summary) => acc + summary.bookings.length, 0)} 件
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] uppercase tracking-wide text-slate-500">アプリ稼働件数</dt>
+                      <dd className="text-lg font-semibold text-slate-800">
+                        {vehicleDailySummaries.reduce((acc, summary) => acc + summary.duties.length, 0)} 件
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <a
+                    href="/vehicle-ledger"
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-slate-800 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-slate-700"
+                  >
+                    車両情報ページを開く
+                  </a>
+                  <span className="text-xs text-slate-500 self-center">
+                    ※ 別タブで詳細管理ページを想定（モックリンク）
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="customer-info" className="scroll-mt-24">
+            <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 px-5 py-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-800">顧客情報</h2>
+                  <p className="text-xs text-slate-500">
+                    顧客の連絡先・契約条件・請求履歴を管理する専用ボードへの導線です。
+                  </p>
+                </div>
+                <div className="text-xs text-slate-500">
+                  <span>ボード内に顧客カードを追加予定</span>
+                </div>
+              </div>
+              <div className="space-y-4 px-5 py-5 text-sm text-slate-700">
+                <p>
+                  配車ボードからは顧客の基本的な識別のみを行い、詳細な契約内容や注意事項は専用ボードで管理します。将来的にはジョブや予約から顧客カードへリンクする設計を想定しています。
+                </p>
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-4 text-xs text-slate-500">
+                  顧客ボードでは、法人・個人別のタブや担当営業メモ、請求書ファイルの保管などを配置予定です。
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <a
+                    href="/customer-board"
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-500"
+                  >
+                    顧客情報ページを開く
+                  </a>
+                  <span className="text-xs text-slate-500 self-center">
+                    ※ 別ページで顧客台帳を構築予定（モックリンク）
+                  </span>
+                </div>
               </div>
             </div>
           </section>
         </div>
+
+        {jobFormOpen && (
+          <JobFormModal
+            draft={jobDraft}
+            onClose={closeJobForm}
+            onChange={handleJobDraftChange}
+            onSubmit={handleCreateJob}
+            viewDateLabel={viewDateDisplay}
+          />
+        )}
 
         {drawerOpen && (
           <Drawer isMobile={isMobile} onClose={closeDrawer}>
@@ -1553,7 +1631,6 @@ export default function VehicleDispatchBoardMock() {
             />
           </Drawer>
         )}
-      </div>
     </>
   );
 }
@@ -2259,6 +2336,152 @@ function ResizeHandle({ value, setValue, min, max, side }: { value: number; setV
   return <div onPointerDown={onDown} className={`absolute top-0 ${side === "right" ? "right-0 cursor-col-resize" : "left-0 cursor-col-resize"} h-full w-1 bg-transparent hover:bg-slate-200`} title={`ドラッグで幅調整（${min}-${max}px）`} />;
 }
 
+function JobFormModal({
+  draft,
+  onClose,
+  onChange,
+  onSubmit,
+  viewDateLabel
+}: {
+  draft: JobDraft;
+  onClose: () => void;
+  onChange: (field: keyof JobDraft, value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  viewDateLabel: string;
+}) {
+  const vehicleClassOptions = Object.entries(VEHICLE_CLASS_LABELS);
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+      <div className="absolute inset-0" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-800">新規ジョブを登録</h3>
+            <p className="text-xs text-slate-500">対象日：{viewDateLabel}</p>
+          </div>
+          <button
+            type="button"
+            className="text-sm text-slate-500 hover:text-slate-700"
+            onClick={onClose}
+          >
+            閉じる
+          </button>
+        </div>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-title">
+              ジョブ名
+            </label>
+            <input
+              id="job-title"
+              type="text"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              value={draft.title}
+              onChange={(e) => onChange("title", e.target.value)}
+              placeholder="例）羽田→帝国ホテル送迎"
+              required
+            />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-client-type">
+                顧客区分
+              </label>
+              <select
+                id="job-client-type"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                value={draft.clientType}
+                onChange={(e) => onChange("clientType", e.target.value)}
+              >
+                <option value="個人">個人</option>
+                <option value="法人">法人</option>
+                <option value="ホテル">ホテル</option>
+                <option value="旅行代理店">旅行代理店</option>
+                <option value="アプリ">アプリ</option>
+                <option value="その他">その他</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-client-name">
+                顧客名
+              </label>
+              <input
+                id="job-client-name"
+                type="text"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                value={draft.clientName}
+                onChange={(e) => onChange("clientName", e.target.value)}
+                placeholder="例）帝国ホテル"
+                required
+              />
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-start-time">
+                開始時刻
+              </label>
+              <input
+                id="job-start-time"
+                type="time"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                value={draft.startTime}
+                onChange={(e) => onChange("startTime", e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-end-time">
+                終了時刻
+              </label>
+              <input
+                id="job-end-time"
+                type="time"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                value={draft.endTime}
+                onChange={(e) => onChange("endTime", e.target.value)}
+                required
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-prefer-class">
+              希望車種クラス
+            </label>
+            <select
+              id="job-prefer-class"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              value={draft.preferClass}
+              onChange={(e) => onChange("preferClass", e.target.value)}
+            >
+              {vehicleClassOptions.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              onClick={onClose}
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              className="rounded-full bg-amber-500 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-amber-400"
+            >
+              追加する
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function Drawer({ isMobile, onClose, children }: { isMobile: boolean; onClose: () => void; children: any }) {
   return (
     <div className="fixed inset-0 z-50">
@@ -2345,6 +2568,11 @@ function DetailsPane({
   const data = item.data as any;
   const driver = data.driverId ? driverMap.get(data.driverId) : null;
   const isBooking = type === "booking";
+  const displayTitle = isBooking ? data.title : `${data.service ?? "アプリ配車"}`;
+  const clientType = isBooking ? data.client?.type ?? "" : "アプリ";
+  const clientName = isBooking ? data.client?.name ?? "" : data.service ?? "配車依頼";
+  const clientLabel = [clientType, clientName].filter(Boolean).join("/") || "未設定";
+  const crossesMidnight = new Date(data.end) <= new Date(data.start);
   const attachments: BookingAttachment[] = isBooking
     ? ((data.attachments as BookingAttachment[] | undefined) ?? [])
     : [];
@@ -2363,12 +2591,12 @@ function DetailsPane({
     <div className="space-y-3 text-sm">
       <section>
         <h4 className="text-xs uppercase tracking-wider text-slate-500 mb-1">概要</h4>
-        <div className="font-medium">{isBooking ? data.title : `${data.service}${driver ? `（${driver.name}）` : ""}`}</div>
+        <div className="font-medium">{displayTitle}</div>
         <div className="text-slate-600">
           {fmt(data.start)} - {fmt(data.end)}
-          {new Date(data.end) <= new Date(data.start) ? "（→翌）" : ""}
+          {crossesMidnight ? "（→翌）" : ""}
         </div>
-        {isBooking && <div className="text-slate-600">依頼元：{data.client?.type}/{data.client?.name}</div>}
+        <div className="text-slate-600">依頼元：{clientLabel}</div>
       </section>
 
       <section>
@@ -2497,7 +2725,15 @@ function DetailsPane({
             </div>
           </div>
         ) : (
-          <div className="text-slate-600">ここに社内共有メモを記入</div>
+          <div className="space-y-2">
+            <textarea
+              className="w-full cursor-not-allowed rounded border border-slate-200 bg-slate-50 px-2 py-1 text-sm text-slate-500"
+              rows={4}
+              value="アプリ配車のメモは管制システム側で管理します。必要に応じてジョブに変換して共有してください。"
+              readOnly
+            />
+            <p className="text-xs text-slate-500">※ レイアウトは通常配車と同じ構成で表示しています（参照のみ）。</p>
+          </div>
         )}
       </section>
     </div>
