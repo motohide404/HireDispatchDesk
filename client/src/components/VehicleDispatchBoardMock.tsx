@@ -753,6 +753,7 @@ function AppDutyBlock({
   const [draftRange, setDraftRange] = useState<DraftRange | null>(null);
   const draftRangeRef = useRef<DraftRange | null>(null);
   const resizeStateRef = useRef<ResizeState | null>(null);
+  const suppressClickRef = useRef(false);
 
   const applyDraftRange = (next: DraftRange | null) => {
     draftRangeRef.current = next;
@@ -884,6 +885,10 @@ function AppDutyBlock({
     }
     resizeStateRef.current = null;
     setAllowDrag(true);
+    suppressClickRef.current = true;
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 200);
     const finalRange = draftRangeRef.current;
     if (!applyChange || !finalRange) {
       applyDraftRange(null);
@@ -907,12 +912,17 @@ function AppDutyBlock({
   const endLabel = fmt(displayEnd);
   const showDraft = draftRange != null;
 
+  const handleCardClick = () => {
+    if (suppressClickRef.current || resizeStateRef.current) return;
+    onClick();
+  };
+
   return (
     <div
       className={`absolute top-2 h-12 bg-purple-500/25 border border-purple-300/60 rounded-lg px-2 py-1 text-[11px] text-purple-900 flex items-end cursor-pointer ${isSelected ? "ring-2 ring-blue-500 shadow-lg" : ""} ${showDraft ? "ring-2 ring-purple-400" : ""}`}
       style={{ left, width }}
       title={`${duty.service}${driverLabel}`}
-      onClick={onClick}
+      onClick={handleCardClick}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -935,6 +945,7 @@ function AppDutyBlock({
         onPointerMove={onResizeMove}
         onPointerUp={onResizePointerUp}
         onPointerCancel={onResizePointerCancel}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="w-1 h-4 bg-purple-400 rounded-full" />
       </div>
@@ -951,6 +962,7 @@ function AppDutyBlock({
         onPointerMove={onResizeMove}
         onPointerUp={onResizePointerUp}
         onPointerCancel={onResizePointerCancel}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="w-1 h-4 bg-purple-400 rounded-full" />
       </div>
@@ -999,6 +1011,7 @@ function BookingBlock({
   const [draftRange, setDraftRange] = useState<DraftRange | null>(null);
   const draftRangeRef = useRef<DraftRange | null>(null);
   const resizeStateRef = useRef<ResizeState | null>(null);
+  const suppressClickRef = useRef(false);
 
   const applyDraftRange = (next: DraftRange | null) => {
     draftRangeRef.current = next;
@@ -1059,6 +1072,10 @@ function BookingBlock({
   };
   const onMouseUp = () => {};
   const onCardClick = () => {
+    if (suppressClickRef.current || resizeStateRef.current) {
+      draggedRef.current = false;
+      return;
+    }
     if (draggedRef.current) {
       draggedRef.current = false;
       return;
@@ -1180,6 +1197,10 @@ function BookingBlock({
     }
     resizeStateRef.current = null;
     setAllowDrag(true);
+    suppressClickRef.current = true;
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 200);
     const finalRange = draftRangeRef.current;
     if (!applyChange || !finalRange) {
       applyDraftRange(null);
@@ -1245,6 +1266,7 @@ function BookingBlock({
             onContextMenu={(e) => e.preventDefault()}
             role="presentation"
             title="開始時間を調整"
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="h-6 w-1 rounded bg-white/80 border border-white/60 shadow" />
           </div>
@@ -1257,6 +1279,7 @@ function BookingBlock({
             onContextMenu={(e) => e.preventDefault()}
             role="presentation"
             title="終了時間を調整"
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="h-6 w-1 rounded bg-white/80 border border-white/60 shadow" />
           </div>
