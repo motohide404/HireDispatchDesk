@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
 
+import "./VehicleDispatchBoardMock.css";
+
 const hours = Array.from({ length: 25 }, (_, i) => i);
 const DRIVER_POOL_WIDTH_INIT = 240;
 const DRIVER_POOL_WIDTH_MIN = 200;
@@ -1040,6 +1042,35 @@ function BookingBlock({
   const ring = booking.status === "ok" ? "ring-green-400" : booking.status === "warn" ? "ring-yellow-400" : "ring-red-400";
   const driver = booking.driverId ? driverMap.get(booking.driverId) : null;
 
+  const driverFrameRef = useRef<HTMLSpanElement | null>(null);
+  const prevDriverIdRef = useRef<number | null>(booking.driverId ?? null);
+
+  useEffect(() => {
+    const currentDriverId = booking.driverId ?? null;
+    const previousDriverId = prevDriverIdRef.current;
+    prevDriverIdRef.current = currentDriverId;
+
+    if (currentDriverId == null) {
+      driverFrameRef.current?.classList.remove("flash-border");
+      return;
+    }
+
+    if (previousDriverId === currentDriverId) {
+      return;
+    }
+
+    const frame = driverFrameRef.current;
+    if (!frame) return;
+
+    frame.classList.remove("flash-border");
+    void frame.offsetWidth;
+    frame.classList.add("flash-border");
+
+    if (typeof window === "undefined") return;
+    const timeout = window.setTimeout(() => frame.classList.remove("flash-border"), 1500);
+    return () => window.clearTimeout(timeout);
+  }, [booking.driverId]);
+
   const [over, setOver] = useState(false);
   const handleDragOver = (e: any) => {
     e.preventDefault();
@@ -1242,7 +1273,12 @@ function BookingBlock({
       <div className="flex items-center justify-between gap-2">
         <div className="font-semibold truncate">{booking.title}</div>
         {driver ? (
-          <span className={`text-[10px] px-2 py-0.5 rounded bg-white/90 text-slate-800 border border-transparent`}>{driver.name}（{driver.code}）</span>
+          <span
+            ref={driverFrameRef}
+            className="text-[10px] px-2 py-0.5 rounded bg-white/90 text-slate-800 border border-white"
+          >
+            {driver.name}（{driver.code}）
+          </span>
         ) : (
           <span className={`text-[10px] px-2 py-0.5 rounded bg-white/90 text-amber-700 ${flashUnassign ? "blink3 border border-amber-500" : "border border-transparent"}`}>ドライバー未割当</span>
         )}
