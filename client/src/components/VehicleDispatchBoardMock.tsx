@@ -73,6 +73,26 @@ const UNASSIGNED_JOBS = [
   { id: "J102", title: "羽田→赤坂", client: { type: "個人", name: "佐藤様" }, start: "2025-10-03T20:30:00+09:00", end: "2025-10-03T21:30:00+09:00", preferClass: "luxury" }
 ];
 
+type CurrentTimePosition = { visible: boolean; x: number };
+
+function getCurrentTimePosition(now: Date, viewDate: string, pxPerMin: number, contentWidth: number): CurrentTimePosition {
+  if (!Number.isFinite(pxPerMin) || pxPerMin <= 0) {
+    return { visible: false, x: 0 };
+  }
+  const viewStart = new Date(`${viewDate}T00:00:00+09:00`);
+  if (Number.isNaN(viewStart.getTime())) {
+    return { visible: false, x: 0 };
+  }
+  const viewEnd = new Date(viewStart.getTime() + 24 * 60 * 60 * 1000);
+  if (now < viewStart || now > viewEnd) {
+    return { visible: false, x: 0 };
+  }
+  const minutesFromStart = (now.getTime() - viewStart.getTime()) / 60000;
+  const x = minutesFromStart * pxPerMin;
+  const clampedX = Math.min(Math.max(x, 0), contentWidth);
+  return { visible: true, x: clampedX };
+}
+
 export function minutesOf(t: string): number {
   const [hhRaw, mmRaw] = t.split(":");
   const hh = Number(hhRaw || 0);
@@ -207,6 +227,7 @@ export default function VehicleDispatchBoardMock() {
   const centerRef = useRef<HTMLDivElement | null>(null);
   const [viewDate, setViewDate] = useState("2025-10-03");
   const dateInputRef = useRef<HTMLInputElement | null>(null);
+  const [now, setNow] = useState(() => new Date());
 
   const viewDateObj = useMemo(() => new Date(`${viewDate}T00:00:00+09:00`), [viewDate]);
   const viewDateDisplay = useMemo(() => {
@@ -261,7 +282,19 @@ export default function VehicleDispatchBoardMock() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return () => undefined;
+    const id = window.setInterval(() => {
+      setNow(new Date());
+    }, 60000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const CONTENT_WIDTH = Math.round(24 * 60 * pxPerMin);
+  const currentTimePosition = useMemo(
+    () => getCurrentTimePosition(now, viewDate, pxPerMin, CONTENT_WIDTH),
+    [now, viewDate, pxPerMin, CONTENT_WIDTH]
+  );
   const bookingsByVehicle = useMemo(() => {
     const map = new Map<number, BoardBooking[]>();
     VEHICLES.forEach((v) => map.set(v.id, []));
@@ -713,6 +746,12 @@ export default function VehicleDispatchBoardMock() {
 
             <div className="relative" style={{ width: CONTENT_WIDTH }}>
               <GridOverlay hourPx={60 * pxPerMin} />
+              {currentTimePosition.visible ? (
+                <div
+                  className="pointer-events-none absolute inset-y-0 w-[2px] bg-amber-500"
+                  style={{ left: 0, transform: `translateX(${currentTimePosition.x}px)` }}
+                />
+              ) : null}
 
               <div className="space-y-3 pt-6">
                 {VEHICLES.map((v) => (
