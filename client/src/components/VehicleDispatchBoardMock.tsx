@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useFlashOnChange } from "../lib/useFlashOnChange";
-import type { DragEvent as ReactDragEvent } from "react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 
 import "./VehicleDispatchBoardMock.css";
 
@@ -79,6 +79,15 @@ const APP_DUTIES_INIT: AppDuty[] = [
   }
 ];
 
+type BookingAttachment = {
+  id: string;
+  name: string;
+  type: string;
+  url: string;
+  size: number;
+  addedAt: string;
+};
+
 type BoardBooking = {
   id: number;
   vehicleId: number;
@@ -89,6 +98,7 @@ type BoardBooking = {
   end: string;
   status: string;
   note?: string;
+  attachments?: BookingAttachment[];
   is_overnight: boolean;
   overnight_from_previous_day?: boolean;
   overnight_to_next_day?: boolean;
@@ -365,6 +375,7 @@ export default function VehicleDispatchBoardMock() {
   const [jobPool, setJobPool] = useState(UNASSIGNED_JOBS);
   const [flashUnassignId, setFlashUnassignId] = useState<number | null>(null);
   const bookingIdRef = useRef(500);
+  const attachmentUrlsRef = useRef<Map<string, string>>(new Map());
   const centerRef = useRef<HTMLDivElement | null>(null);
   const [viewDate, setViewDate] = useState("2025-10-03");
   const dateInputRef = useRef<HTMLInputElement | null>(null);
@@ -431,6 +442,17 @@ export default function VehicleDispatchBoardMock() {
     return () => window.clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      attachmentUrlsRef.current.forEach((url) => {
+        if (typeof url === "string" && url.startsWith("blob:")) {
+          URL.revokeObjectURL(url);
+        }
+      });
+      attachmentUrlsRef.current.clear();
+    };
+  }, []);
+
   const CONTENT_WIDTH = Math.round(24 * 60 * pxPerMin);
   const currentTimePosition = useMemo(
     () => getCurrentTimePosition(now, viewDate, pxPerMin, CONTENT_WIDTH),
@@ -469,6 +491,22 @@ export default function VehicleDispatchBoardMock() {
   const closeDrawer = () => setDrawerOpen(false);
 
   const isMobile = typeof window !== "undefined" ? window.innerWidth < 768 : false;
+
+  const registerAttachmentUrls = (attachments: BookingAttachment[]) => {
+    attachments.forEach((attachment) => {
+      attachmentUrlsRef.current.set(attachment.id, attachment.url);
+    });
+  };
+
+  const revokeAttachmentUrls = (ids: string[]) => {
+    ids.forEach((id) => {
+      const url = attachmentUrlsRef.current.get(id);
+      if (url && url.startsWith("blob:")) {
+        URL.revokeObjectURL(url);
+      }
+      attachmentUrlsRef.current.delete(id);
+    });
+  };
 
   function laneHighlight(el: HTMLElement, on: boolean) {
     el.classList.toggle("ring-2", on);
@@ -510,6 +548,74 @@ export default function VehicleDispatchBoardMock() {
     if (moved && driverUnassigned) {
       setFlashUnassignId(bookingId);
       window.setTimeout(() => setFlashUnassignId(null), 1500);
+    }
+  };
+
+  const handleUpdateBookingNote = (id: number, note: string) => {
+    setBookings((prev) => prev.map((booking) => (booking.id === id ? { ...booking, note } : booking)));
+    setDrawerItem((prev: any) => {
+      if (!prev || prev.type !== "booking" || prev.data?.id !== id) return prev;
+      if (prev.data?.note === note) return prev;
+      return { ...prev, data: { ...prev.data, note } };
+    });
+  };
+
+  const handleAddBookingAttachments = (id: number, files: FileList) => {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+    const newAttachments = fileArray.map((file) => makeAttachmentFromFile(file));
+    registerAttachmentUrls(newAttachments);
+    setBookings((prev) =>
+      prev.map((booking) =>
+        booking.id === id
+          ? { ...booking, attachments: [...(booking.attachments ?? []), ...newAttachments] }
+          : booking
+      )
+    );
+    setDrawerItem((prev: any) => {
+      if (!prev || prev.type !== "booking" || prev.data?.id !== id) return prev;
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          attachments: [...((prev.data?.attachments as BookingAttachment[] | undefined) ?? []), ...newAttachments]
+        }
+      };
+    });
+  };
+
+  const handleRemoveBookingAttachment = (bookingId: number, attachmentId: string) => {
+    const removed: BookingAttachment[] = [];
+    setBookings((prev) =>
+      prev.map((booking) => {
+        if (booking.id !== bookingId) return booking;
+        const nextAttachments = (booking.attachments ?? []).filter((attachment) => {
+          if (attachment.id === attachmentId) {
+            removed.push(attachment);
+            return false;
+          }
+          return true;
+        });
+        return { ...booking, attachments: nextAttachments };
+      })
+    );
+    setDrawerItem((prev: any) => {
+      if (!prev || prev.type !== "booking" || prev.data?.id !== bookingId) return prev;
+      const nextAttachments = ((prev.data?.attachments as BookingAttachment[] | undefined) ?? []).filter(
+        (attachment) => {
+          if (attachment.id === attachmentId) {
+            if (!removed.find((att) => att.id === attachmentId)) {
+              removed.push(attachment);
+            }
+            return false;
+          }
+          return true;
+        }
+      );
+      return { ...prev, data: { ...prev.data, attachments: nextAttachments } };
+    });
+    if (removed.length) {
+      revokeAttachmentUrls(removed.map((attachment) => attachment.id));
     }
   };
 
@@ -1054,7 +1160,13 @@ export default function VehicleDispatchBoardMock() {
 
         {drawerOpen && (
           <Drawer isMobile={isMobile} onClose={closeDrawer}>
-            <DetailsPane item={drawerItem} onReturn={(id: number) => returnBookingToJobPool(id)} />
+            <DetailsPane
+              item={drawerItem}
+              onReturn={(id: number) => returnBookingToJobPool(id)}
+              onUpdateNote={handleUpdateBookingNote}
+              onAddAttachment={handleAddBookingAttachments}
+              onRemoveAttachment={handleRemoveBookingAttachment}
+            />
           </Drawer>
         )}
       </div>
@@ -1792,13 +1904,76 @@ function Drawer({ isMobile, onClose, children }: { isMobile: boolean; onClose: (
   );
 }
 
-function DetailsPane({ item, onReturn }: { item: any; onReturn?: (id: number) => void }) {
+function DetailsPane({
+  item,
+  onReturn,
+  onUpdateNote,
+  onAddAttachment,
+  onRemoveAttachment
+}: {
+  item: any;
+  onReturn?: (id: number) => void;
+  onUpdateNote?: (id: number, note: string) => void;
+  onAddAttachment?: (id: number, files: FileList) => void;
+  onRemoveAttachment?: (bookingId: number, attachmentId: string) => void;
+}) {
+  const [noteDraft, setNoteDraft] = useState("");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const notePreview = useMemo<ReactNode>(() => renderNoteWithLinks(noteDraft), [noteDraft]);
+
+  useEffect(() => {
+    if (!item || item.type !== "booking") {
+      setNoteDraft("");
+      setSaveState("idle");
+      return;
+    }
+    const nextNote = item.data?.note ?? "";
+    setNoteDraft(nextNote);
+    setSaveState("idle");
+  }, [item]);
+
+  useEffect(() => {
+    if (!item || item.type !== "booking" || !onUpdateNote) return;
+    const bookingId = item.data?.id;
+    if (typeof bookingId !== "number") return;
+
+    const currentNote = item.data?.note ?? "";
+    if (noteDraft === currentNote) return;
+
+    setSaveState("saving");
+    const timer = window.setTimeout(() => {
+      onUpdateNote(bookingId, noteDraft);
+      setSaveState("saved");
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [noteDraft, item, onUpdateNote]);
+
+  useEffect(() => {
+    if (saveState !== "saved") return;
+    const timer = window.setTimeout(() => setSaveState("idle"), 1500);
+    return () => window.clearTimeout(timer);
+  }, [saveState]);
+
   if (!item) return <div className="text-slate-500 text-sm">項目が選択されていません</div>;
   const type = item.type;
   const v = item.vehicle as any;
   const data = item.data as any;
   const driver = data.driverId ? driverMap.get(data.driverId) : null;
   const isBooking = type === "booking";
+  const attachments: BookingAttachment[] = isBooking
+    ? ((data.attachments as BookingAttachment[] | undefined) ?? [])
+    : [];
+
+  const handleAttachmentInput = (files: FileList | null) => {
+    if (!isBooking || !files || files.length === 0 || !onAddAttachment) return;
+    onAddAttachment(data.id, files);
+  };
+
+  const handleAttachmentRemove = (attachmentId: string) => {
+    if (!isBooking) return;
+    onRemoveAttachment?.(data.id, attachmentId);
+  };
 
   return (
     <div className="space-y-3 text-sm">
@@ -1818,7 +1993,7 @@ function DetailsPane({ item, onReturn }: { item: any; onReturn?: (id: number) =>
       </section>
 
       <section>
-         <h4 className="text-xs uppercase tracking-wider text-slate-500 mb-1">車両</h4>
+        <h4 className="text-xs uppercase tracking-wider text-slate-500 mb-1">車両</h4>
         <div>
           {v?.name}　<span className="text-slate-500">{v?.plate}</span>
         </div>
@@ -1848,10 +2023,190 @@ function DetailsPane({ item, onReturn }: { item: any; onReturn?: (id: number) =>
 
       <section>
         <h4 className="text-xs uppercase tracking-wider text-slate-500 mb-1">ノート</h4>
-        <div className="text-slate-600">ここに社内共有メモを記入</div>
+        {isBooking ? (
+          <div className="space-y-3">
+            <textarea
+              className="w-full border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+              rows={4}
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+              placeholder="ここに社内共有メモを記入"
+            />
+            <p className="text-xs text-slate-500">
+              {saveState === "saving"
+                ? "保存中..."
+                : saveState === "saved"
+                  ? "保存しました"
+                  : "変更は自動保存されます"}
+            </p>
+            <div className="rounded border border-slate-200 bg-slate-50 p-2">
+              <p className="text-xs text-slate-500 mb-1">プレビュー</p>
+              <div className="text-sm text-slate-700 leading-relaxed break-words">{notePreview}</div>
+            </div>
+            <div className="space-y-2">
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">ファイル添付</label>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  multiple
+                  className="block w-full text-xs text-slate-600 file:mr-2 file:rounded-full file:border-0 file:bg-blue-50 file:px-3 file:py-1 file:text-blue-700 hover:file:bg-blue-100"
+                  onChange={(e) => {
+                    handleAttachmentInput(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+                <p className="text-[11px] text-slate-500 mt-1">画像やPDFなどの資料をアップロードできます。</p>
+              </div>
+              {attachments.length > 0 ? (
+                <ul className="space-y-2">
+                  {attachments.map((attachment) => {
+                    const isImage = attachment.type?.startsWith("image/") ?? false;
+                    const addedLabel = formatAttachmentTimestamp(attachment.addedAt);
+                    return (
+                      <li
+                        key={attachment.id}
+                        className="flex items-start justify-between gap-3 rounded border border-slate-200 bg-white p-2"
+                      >
+                        <div className="flex items-start gap-3">
+                          {isImage ? (
+                            <img
+                              src={attachment.url}
+                              alt={attachment.name}
+                              className="h-14 w-14 rounded border border-slate-200 object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-14 w-14 items-center justify-center rounded border border-slate-200 bg-slate-50 text-[11px] font-medium uppercase text-slate-600">
+                              {attachment.type?.toLowerCase().includes("pdf") ? "PDF" : "FILE"}
+                            </div>
+                          )}
+                          <div className="space-y-1 text-xs text-slate-600">
+                            <a
+                              href={attachment.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-medium text-slate-700 underline break-all"
+                            >
+                              {attachment.name}
+                            </a>
+                            <div className="flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-slate-500">
+                              <span>{formatFileSize(attachment.size)}</span>
+                              {attachment.type && <span>{attachment.type}</span>}
+                              {addedLabel && <span>{addedLabel}</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="text-xs text-red-500 hover:text-red-600"
+                          onClick={() => handleAttachmentRemove(attachment.id)}
+                        >
+                          削除
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-xs text-slate-500">添付ファイルはまだありません。</p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="text-slate-600">ここに社内共有メモを記入</div>
+        )}
       </section>
     </div>
   );
+}
+
+function makeAttachmentFromFile(file: File): BookingAttachment {
+  const id =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `att-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const url = URL.createObjectURL(file);
+  return {
+    id,
+    name: file.name,
+    type: file.type || "application/octet-stream",
+    url,
+    size: file.size,
+    addedAt: new Date().toISOString()
+  };
+}
+
+function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / Math.pow(1024, exponent);
+  const formatted = value >= 10 || exponent === 0 ? Math.round(value) : Math.round(value * 10) / 10;
+  return `${formatted} ${units[exponent]}`;
+}
+
+function formatAttachmentTimestamp(iso: string): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("ja-JP", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function renderNoteWithLinks(text: string): ReactNode {
+  if (!text.trim()) {
+    return <span className="text-slate-400">メモはまだありません</span>;
+  }
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = urlRegex.exec(text)) !== null) {
+    const preceding = text.slice(lastIndex, match.index);
+    if (preceding) {
+      nodes.push(...renderPlainTextWithBreaks(preceding, `${match.index}-text`));
+    }
+    const url = match[0];
+    nodes.push(
+      <a
+        key={`${match.index}-link`}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 underline break-all"
+      >
+        {url}
+      </a>
+    );
+    lastIndex = match.index + url.length;
+  }
+  const remaining = text.slice(lastIndex);
+  if (remaining) {
+    nodes.push(...renderPlainTextWithBreaks(remaining, `tail-${lastIndex}`));
+  }
+  return nodes;
+}
+
+function renderPlainTextWithBreaks(segment: string, keyPrefix: string): ReactNode[] {
+  const parts = segment.split(/\r?\n/);
+  const nodes: ReactNode[] = [];
+  parts.forEach((part, index) => {
+    if (part) {
+      nodes.push(
+        <span key={`${keyPrefix}-${index}`} className="break-words">
+          {part}
+        </span>
+      );
+    }
+    if (index < parts.length - 1) {
+      nodes.push(<br key={`${keyPrefix}-${index}-br`} />);
+    }
+  });
+  return nodes;
 }
 
 function clamp(v: number, min: number, max: number) {
