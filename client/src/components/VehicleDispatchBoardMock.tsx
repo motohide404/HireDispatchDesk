@@ -1199,8 +1199,8 @@ export default function VehicleDispatchBoardMock() {
           </div>
         </div>
 
-        <div className="flex gap-3 h-[560px]">
-          <div className="bg-white rounded-2xl shadow p-3 overflow-auto relative" style={{ width: driverWidth }}>
+        <div className="flex gap-3">
+          <div className="bg-white rounded-2xl shadow p-3 overflow-auto relative max-h-[560px]" style={{ width: driverWidth }}>
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-medium">ドライバープール</h2>
               <span className="text-xs text-slate-500">ドラッグで幅調整</span>
