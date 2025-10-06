@@ -17,12 +17,19 @@ const MIN_BOOKING_DURATION_MINUTES = 15;
 const LP_MS = 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+type Interval = { start: number; end: number };
+
 const VEHICLES = [
   { id: 11, name: "セダンA", plate: "品川300 あ 12-34", class: "sedan" },
   { id: 12, name: "ワゴンB", plate: "品川300 い 56-78", class: "van" },
   { id: 13, name: "ハイグレードC", plate: "品川300 う 90-12", class: "luxury" },
   { id: 14, name: "ワゴンD", plate: "品川300 え 34-56", class: "van" }
 ];
+const VEHICLE_CLASS_LABELS: Record<string, string> = {
+  sedan: "セダン",
+  van: "ワゴン",
+  luxury: "ハイグレード"
+};
 const DRIVERS = [
   { id: 1, name: "田中", code: "D-01", extUsed: 2 },
   { id: 2, name: "佐藤", code: "D-02", extUsed: 0 },
@@ -347,6 +354,48 @@ function vehicleIdAtPoint(clientX: number, clientY: number): number | null {
   return null;
 }
 
+function clipIntervalToDay(startISO: string, endISO: string, dayStart: number, dayEnd: number): Interval | null {
+  const startDate = new Date(startISO);
+  let endDate = new Date(endISO);
+  if (endDate <= startDate) {
+    endDate = new Date(endDate.getTime() + DAY_MS);
+  }
+  const start = Math.max(startDate.getTime(), dayStart);
+  const end = Math.min(endDate.getTime(), dayEnd);
+  if (end <= start) return null;
+  return { start, end };
+}
+
+function mergeIntervals(intervals: Interval[]): Interval[] {
+  if (intervals.length === 0) return [];
+  const sorted = [...intervals].sort((a, b) => a.start - b.start);
+  const merged: Interval[] = [];
+  for (const interval of sorted) {
+    const last = merged[merged.length - 1];
+    if (!last || interval.start > last.end) {
+      merged.push({ ...interval });
+    } else {
+      last.end = Math.max(last.end, interval.end);
+    }
+  }
+  return merged;
+}
+
+function computeFreeSlots(mergedIntervals: Interval[], dayStart: number, dayEnd: number): Interval[] {
+  const slots: Interval[] = [];
+  let cursor = dayStart;
+  for (const interval of mergedIntervals) {
+    if (interval.start > cursor) {
+      slots.push({ start: cursor, end: interval.start });
+    }
+    cursor = Math.max(cursor, interval.end);
+  }
+  if (cursor < dayEnd) {
+    slots.push({ start: cursor, end: dayEnd });
+  }
+  return slots;
+}
+
 export default function VehicleDispatchBoardMock() {
   const [fullView, setFullView] = useState(false);
   const [pxPerMin, setPxPerMin] = useState(DEFAULT_PX_PER_MIN);
@@ -380,6 +429,98 @@ export default function VehicleDispatchBoardMock() {
     const weekday = viewDateObj.toLocaleDateString("ja-JP", { weekday: "short" });
     return `${base}（${weekday}）`;
   }, [viewDateObj]);
+  const vehicleDailySummaries = useMemo(() => {
+    const dayStart = viewDateObj.getTime();
+    if (!Number.isFinite(dayStart)) {
+      return VEHICLES.map((vehicle) => ({
+        vehicle,
+        bookings: [],
+        duties: [],
+        mergedIntervals: [],
+        busyMinutes: 0,
+        freeMinutes: 24 * 60,
+        longestFreeMinutes: 24 * 60,
+        freeSlots: [] as Interval[],
+        utilization: 0
+      }));
+    }
+    const dayEnd = dayStart + DAY_MS;
+    const totalMinutes = Math.round((dayEnd - dayStart) / 60000);
+
+    return VEHICLES.map((vehicle) => {
+      const todaysBookings = bookings
+        .filter((b) => b.vehicleId === vehicle.id)
+        .map((b) => ({ booking: b, range: clipIntervalToDay(b.start, b.end, dayStart, dayEnd) }))
+        .filter((entry): entry is { booking: BoardBooking; range: Interval } => Boolean(entry.range));
+      const todaysDuties = appDuties
+        .filter((duty) => duty.vehicleId === vehicle.id)
+        .map((duty) => ({ duty, range: clipIntervalToDay(duty.start, duty.end, dayStart, dayEnd) }))
+        .filter((entry): entry is { duty: AppDuty; range: Interval } => Boolean(entry.range));
+
+      const mergedIntervals = mergeIntervals([
+        ...todaysBookings.map((entry) => entry.range),
+        ...todaysDuties.map((entry) => entry.range)
+      ]);
+
+      const busyMinutes = Math.round(
+        mergedIntervals.reduce((acc, interval) => acc + (interval.end - interval.start) / 60000, 0)
+      );
+      const freeMinutes = Math.max(0, totalMinutes - busyMinutes);
+
+      const freeSlots = computeFreeSlots(mergedIntervals, dayStart, dayEnd);
+      const longestFreeMinutes = freeSlots.length
+        ? Math.max(...freeSlots.map((slot) => Math.round((slot.end - slot.start) / 60000)))
+        : freeMinutes;
+
+      const utilization = totalMinutes === 0 ? 0 : busyMinutes / totalMinutes;
+
+      return {
+        vehicle,
+        bookings: todaysBookings.map((entry) => entry.booking),
+        duties: todaysDuties.map((entry) => entry.duty),
+        mergedIntervals,
+        busyMinutes,
+        freeMinutes,
+        freeSlots,
+        longestFreeMinutes,
+        utilization
+      };
+    });
+  }, [appDuties, bookings, viewDateObj]);
+  const driverDailySummaries = useMemo(() => {
+    const dayStart = viewDateObj.getTime();
+    if (!Number.isFinite(dayStart)) {
+      return DRIVERS.map((driver) => ({
+        driver,
+        bookingCount: 0,
+        dutyCount: 0,
+        mergedIntervals: [] as Interval[],
+        busyMinutes: 0
+      }));
+    }
+    const dayEnd = dayStart + DAY_MS;
+    return DRIVERS.map((driver) => {
+      const todaysBookings = bookings
+        .filter((b) => b.driverId === driver.id)
+        .map((b) => clipIntervalToDay(b.start, b.end, dayStart, dayEnd))
+        .filter((interval): interval is Interval => Boolean(interval));
+      const todaysDuties = appDuties
+        .filter((duty) => duty.driverId === driver.id)
+        .map((duty) => clipIntervalToDay(duty.start, duty.end, dayStart, dayEnd))
+        .filter((interval): interval is Interval => Boolean(interval));
+      const mergedIntervals = mergeIntervals([...todaysBookings, ...todaysDuties]);
+      const busyMinutes = Math.round(
+        mergedIntervals.reduce((acc, interval) => acc + (interval.end - interval.start) / 60000, 0)
+      );
+      return {
+        driver,
+        bookingCount: todaysBookings.length,
+        dutyCount: todaysDuties.length,
+        mergedIntervals,
+        busyMinutes
+      };
+    });
+  }, [appDuties, bookings, viewDateObj]);
   const shiftViewDate = (delta: number) => {
     const next = new Date(viewDateObj);
     next.setDate(next.getDate() + delta);
@@ -1050,6 +1191,165 @@ export default function VehicleDispatchBoardMock() {
           >
             車両台帳
           </a>
+        </div>
+
+        <div className="mt-8 space-y-8">
+          <section id="driver-ledger" className="scroll-mt-24">
+            <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 px-5 py-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-800">ドライバー台帳</h2>
+                  <p className="text-xs text-slate-500">{viewDateDisplay} の稼働サマリー</p>
+                </div>
+                <span className="text-xs text-slate-500">{driverDailySummaries.length} 名</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th scope="col" className="px-5 py-3 text-left font-semibold">
+                        ドライバー
+                      </th>
+                      <th scope="col" className="px-5 py-3 text-left font-semibold">
+                        担当状況
+                      </th>
+                      <th scope="col" className="px-5 py-3 text-left font-semibold">
+                        稼働時間
+                      </th>
+                      <th scope="col" className="px-5 py-3 text-left font-semibold">
+                        メモ
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {driverDailySummaries.map((summary) => {
+                      const { driver, bookingCount, dutyCount, mergedIntervals, busyMinutes } = summary;
+                      const totalAssignments = bookingCount + dutyCount;
+                      const statusLabel = totalAssignments > 0 ? "稼働中" : "待機";
+                      const firstInterval = mergedIntervals[0];
+                      const lastInterval = mergedIntervals[mergedIntervals.length - 1];
+                      return (
+                        <tr key={driver.id} className="even:bg-slate-50/60">
+                          <td className="px-5 py-3 align-top">
+                            <div className="font-medium text-slate-800">{driver.name}</div>
+                            <div className="text-xs text-slate-500">{driver.code}</div>
+                          </td>
+                          <td className="px-5 py-3 align-top">
+                            <div>
+                              予約 {bookingCount} 件 / アプリ {dutyCount} 件
+                            </div>
+                            <div className="text-xs text-slate-500">{statusLabel}</div>
+                          </td>
+                          <td className="px-5 py-3 align-top">
+                            {busyMinutes > 0 && firstInterval && lastInterval ? (
+                              <div className="space-y-1">
+                                <div>{formatMinutesLabel(busyMinutes)}</div>
+                                <div className="text-xs text-slate-500">
+                                  {formatTimeInJst(firstInterval.start)}〜{formatTimeInJst(lastInterval.end)}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-slate-500">終日空き</div>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 align-top text-xs text-slate-500">
+                            延長使用 {driver.extUsed}/7
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section id="vehicle-ledger" className="scroll-mt-24">
+            <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 px-5 py-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-800">車両台帳</h2>
+                  <p className="text-xs text-slate-500">車両ごとの予約・稼働状況</p>
+                </div>
+                <span className="text-xs text-slate-500">{vehicleDailySummaries.length} 台</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th scope="col" className="px-5 py-3 text-left font-semibold">
+                        車両
+                      </th>
+                      <th scope="col" className="px-5 py-3 text-left font-semibold">
+                        クラス
+                      </th>
+                      <th scope="col" className="px-5 py-3 text-left font-semibold">
+                        予約 / アプリ
+                      </th>
+                      <th scope="col" className="px-5 py-3 text-left font-semibold">
+                        稼働状況
+                      </th>
+                      <th scope="col" className="px-5 py-3 text-left font-semibold">
+                        空き時間
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {vehicleDailySummaries.map((summary) => {
+                      const { vehicle, bookings: vBookings, duties, mergedIntervals, busyMinutes, freeMinutes, freeSlots, longestFreeMinutes, utilization } = summary;
+                      const firstInterval = mergedIntervals[0];
+                      const lastInterval = mergedIntervals[mergedIntervals.length - 1];
+                      const utilizationPercent = Math.round(Math.min(Math.max(utilization * 100, 0), 100));
+                      const classLabel = VEHICLE_CLASS_LABELS[vehicle.class as keyof typeof VEHICLE_CLASS_LABELS] ?? vehicle.class;
+                      return (
+                        <tr key={vehicle.id} className="even:bg-slate-50/60">
+                          <td className="px-5 py-3 align-top">
+                            <div className="font-medium text-slate-800">{vehicle.name}</div>
+                            <div className="text-xs text-slate-500">{vehicle.plate}</div>
+                          </td>
+                          <td className="px-5 py-3 align-top">
+                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                              {classLabel}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 align-top">
+                            <div>予約 {vBookings.length} 件</div>
+                            <div>アプリ {duties.length} 件</div>
+                          </td>
+                          <td className="px-5 py-3 align-top">
+                            {busyMinutes > 0 && firstInterval && lastInterval ? (
+                              <div className="space-y-1">
+                                <div>{formatMinutesLabel(busyMinutes)}</div>
+                                <div className="text-xs text-slate-500">
+                                  {formatTimeInJst(firstInterval.start)}〜{formatTimeInJst(lastInterval.end)}
+                                </div>
+                                <div className="text-xs text-slate-500">稼働率 {utilizationPercent}%</div>
+                              </div>
+                            ) : (
+                              <div className="text-slate-500">終日空き</div>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 align-top">
+                            <div>{formatMinutesLabel(freeMinutes)}</div>
+                            {freeSlots.length > 0 ? (
+                              <div className="space-y-1 text-xs text-slate-500">
+                                <div>
+                                  空き枠 {freeSlots.length} 件 / 最大 {formatMinutesLabel(longestFreeMinutes)}
+                                </div>
+                                <div>{summarizeFreeSlots(freeSlots)}</div>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-slate-500">空き枠なし</div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
         </div>
 
         {drawerOpen && (
@@ -1864,6 +2164,26 @@ function toJstIso(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(
     d.getMinutes()
   )}:${pad2(d.getSeconds())}+09:00`;
+}
+function formatMinutesLabel(minutes: number) {
+  if (minutes <= 0) return "0分";
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours === 0) return `${mins}分`;
+  if (mins === 0) return `${hours}時間`;
+  return `${hours}時間${mins}分`;
+}
+function formatTimeInJst(ms: number) {
+  const d = new Date(ms);
+  return d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Tokyo" });
+}
+function summarizeFreeSlots(slots: Interval[], limit = 2) {
+  if (slots.length === 0) return "空き枠なし";
+  const parts = slots.slice(0, limit).map((slot) => `${formatTimeInJst(slot.start)}〜${formatTimeInJst(slot.end)}`);
+  if (slots.length > limit) {
+    parts.push("…");
+  }
+  return parts.join("、");
 }
 function fmt(s: string) {
   const d = new Date(s);
