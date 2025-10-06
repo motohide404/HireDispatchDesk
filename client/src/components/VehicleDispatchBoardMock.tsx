@@ -1163,7 +1163,18 @@ export default function VehicleDispatchBoardMock() {
                 aria-label="前日の夜間予約へ移動"
                 title="前日の夜間予約へ移動"
               >
-                ←前
+                {/* 左矢印（アイコン） */}
+                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                  <path
+                    d="M15 18L9 12l6-6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span>前</span>
               </button>
             ) : null}
             {hasNextOvernight ? (
@@ -1175,7 +1186,18 @@ export default function VehicleDispatchBoardMock() {
                 aria-label="翌日の夜間予約へ移動"
                 title="翌日の夜間予約へ移動"
               >
-                →翌
+                {/* 右矢印（アイコン） */}
+                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                  <path
+                    d="M9 6l6 6-6 6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span>翌</span>
               </button>
             ) : null}
             <div className="flex items-center justify-between mb-2 sticky left-0 top-0 z-10 bg-white pr-2">
