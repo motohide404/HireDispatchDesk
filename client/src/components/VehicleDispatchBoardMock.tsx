@@ -1258,84 +1258,96 @@ export default function VehicleDispatchBoardMock() {
                 />
               ) : null}
 
-              <div className="space-y-3 pt-6">
-                {VEHICLES.map((v) => (
+              <div className="relative" style={{ width: CONTENT_WIDTH }}>
+                <GridOverlay hourPx={60 * pxPerMin} />
+                {currentTimePosition.visible ? (
                   <div
-                    key={v.id}
-                    data-vehicle-id={v.id}
-                    className="relative h-16 border rounded-xl bg-white overflow-hidden"
-                    onDragOver={handleLaneDragOver}
-                    onDragLeave={handleLaneDragLeave}
-                    onDrop={(e) => handleLaneDrop(v.id, e)}
-                  >
-                    {(appDutiesByVehicle.get(v.id) || []).map((a: any) => (
-                    <AppDutyBlock
-                      key={a.id}
-                      duty={a}
-                      pxPerMin={pxPerMin}
-                      viewDate={viewDate}
-                      isOvernight={a.is_overnight}
-                      overnightFromPreviousDay={a.overnight_from_previous_day}
-                      overnightToNextDay={a.overnight_to_next_day}
-                      onClick={() => openDrawer({ type: "duty", data: a, vehicle: v })}
-                      isSelected={selected?.type === "duty" && selected?.id === a.id}
-                      onMoveDutyToVehicle={(dutyId, fromVehicleId, destVehicleId) => moveDutyByPointer(dutyId, fromVehicleId, destVehicleId)}
-                      onDriverDrop={(dutyId, driverId) => assignDriverToAppDuty(dutyId, driverId)}
-                      onResize={(dutyId, nextStart, nextEnd) => handleResizeDuty(dutyId, nextStart, nextEnd)}
-                    />
-                    ))}
-                    {(bookingsByVehicle.get(v.id) || []).map((b: BoardBooking) => (
-                      <BookingBlock
-                        key={b.id}
-                        booking={b}
-                        pxPerMin={pxPerMin}
-                        viewDate={viewDate}
-                        isOvernight={b.is_overnight}
-                        overnightFromPreviousDay={b.overnight_from_previous_day}
-                        overnightToNextDay={b.overnight_to_next_day}
-                        onClick={() => openDrawer({ type: "booking", data: b, vehicle: v })}
-                        isSelected={selected?.type === "booking" && selected?.id === b.id}
-                        resizable={isAppJob(b)}
-                        onDriverDrop={(bookingId: number, driverId: number) => {
-                          const cur = bookings.find((x) => x.id === bookingId);
-                          if (!cur) return;
-                          if (cur.driverId === driverId) return;
-                          if (cur.driverId != null && cur.driverId !== driverId) {
-                            const currentDriverName = driverMap.get(cur.driverId)?.name ?? "現在ドライバー";
-                            const incomingDriverName = driverMap.get(driverId)?.name ?? "新ドライバー";
-                            const ok =
-                              typeof window === "undefined"
-                                ? true
-                                : window.confirm(`現在: ${currentDriverName} → 新: ${incomingDriverName} に変更しますか？`);
-                            if (!ok) return;
-                          }
-                          const cand: BoardBooking = { ...cur, driverId };
-                          if (hasDriverTimeConflict(bookings, cand)) {
-                            alert("同一ドライバーの時間重複のため割当できません");
-                            return;
-                          }
-                          setBookings((prev) => prev.map((x) => (x.id === bookingId ? { ...x, driverId } : x)));
-                        }}
-                        onMoveToVehicle={(bookingId, fromVehicleId, destVehicleId, originalDriverId) =>
-                          moveBookingByPointer(bookingId, fromVehicleId, destVehicleId, originalDriverId)
-                        }
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.effectAllowed = "move";
-                          e.dataTransfer.setData("text/x-booking-id", String(b.id));
-                          e.dataTransfer.setData("text/x-booking-move", String(b.id));
-                          e.dataTransfer.setData("text/x-from-vehicle-id", String(b.vehicleId));
-                          e.dataTransfer.setData("text/x-original-driver-id", b.driverId != null ? String(b.driverId) : "");
-                          e.dataTransfer.setData("text/plain", String(b.id));
-                        }}
-                        flashUnassign={flashUnassignId === b.id}
-                        onResize={(bookingId, nextStart, nextEnd) => handleResizeBooking(bookingId, nextStart, nextEnd)}
-                      />
-                    ))}
+                    className="pointer-events-none absolute inset-y-0 w-[2px] bg-amber-500"
+                    style={{ left: 0, transform: `translateX(${currentTimePosition.x}px)` }}
+                  />
+                ) : null}
 
-                    <div className="absolute left-2 top-1 text-[11px] text-slate-500 bg-white/80 rounded px-1">{v.name}</div>
-                  </div>
-                ))}
+                <div className="space-y-3 pt-6">
+                  {VEHICLES.map((v) => (
+                    <div
+                      key={v.id}
+                      data-vehicle-id={v.id}
+                      className="relative h-16 border rounded-xl bg-white overflow-hidden"
+                      onDragOver={handleLaneDragOver}
+                      onDragLeave={handleLaneDragLeave}
+                      onDrop={(e) => handleLaneDrop(v.id, e)}
+                    >
+                      {(appDutiesByVehicle.get(v.id) || []).map((a: any) => (
+                        <AppDutyBlock
+                          key={a.id}
+                          duty={a}
+                          pxPerMin={pxPerMin}
+                          viewDate={viewDate}
+                          isOvernight={a.is_overnight}
+                          overnightFromPreviousDay={a.overnight_from_previous_day}
+                          overnightToNextDay={a.overnight_to_next_day}
+                          onClick={() => openDrawer({ type: "duty", data: a, vehicle: v })}
+                          isSelected={selected?.type === "duty" && selected?.id === a.id}
+                          onMoveDutyToVehicle={(dutyId, fromVehicleId, destVehicleId) =>
+                            moveDutyByPointer(dutyId, fromVehicleId, destVehicleId)
+                          }
+                          onDriverDrop={(dutyId, driverId) => assignDriverToAppDuty(dutyId, driverId)}
+                          onResize={(dutyId, nextStart, nextEnd) => handleResizeDuty(dutyId, nextStart, nextEnd)}
+                        />
+                      ))}
+                      {(bookingsByVehicle.get(v.id) || []).map((b: BoardBooking) => (
+                        <BookingBlock
+                          key={b.id}
+                          booking={b}
+                          pxPerMin={pxPerMin}
+                          viewDate={viewDate}
+                          isOvernight={b.is_overnight}
+                          overnightFromPreviousDay={b.overnight_from_previous_day}
+                          overnightToNextDay={b.overnight_to_next_day}
+                          onClick={() => openDrawer({ type: "booking", data: b, vehicle: v })}
+                          isSelected={selected?.type === "booking" && selected?.id === b.id}
+                          resizable={isAppJob(b)}
+                          onDriverDrop={(bookingId: number, driverId: number) => {
+                            const cur = bookings.find((x) => x.id === bookingId);
+                            if (!cur) return;
+                            if (cur.driverId === driverId) return;
+                            if (cur.driverId != null && cur.driverId !== driverId) {
+                              const currentDriverName = driverMap.get(cur.driverId)?.name ?? "現在ドライバー";
+                              const incomingDriverName = driverMap.get(driverId)?.name ?? "新ドライバー";
+                              const ok =
+                                typeof window === "undefined"
+                                  ? true
+                                  : window.confirm(`現在: ${currentDriverName} → 新: ${incomingDriverName} に変更しますか？`);
+                              if (!ok) return;
+                            }
+                            const cand: BoardBooking = { ...cur, driverId };
+                            if (hasDriverTimeConflict(bookings, cand)) {
+                              alert("同一ドライバーの時間重複のため割当できません");
+                              return;
+                            }
+                            setBookings((prev) => prev.map((x) => (x.id === bookingId ? { ...x, driverId } : x)));
+                          }}
+                          onMoveToVehicle={(bookingId, fromVehicleId, destVehicleId, originalDriverId) =>
+                            moveBookingByPointer(bookingId, fromVehicleId, destVehicleId, originalDriverId)
+                          }
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.effectAllowed = "move";
+                            e.dataTransfer.setData("text/x-booking-id", String(b.id));
+                            e.dataTransfer.setData("text/x-booking-move", String(b.id));
+                            e.dataTransfer.setData("text/x-from-vehicle-id", String(b.vehicleId));
+                            e.dataTransfer.setData("text/x-original-driver-id", b.driverId != null ? String(b.driverId) : "");
+                            e.dataTransfer.setData("text/plain", String(b.id));
+                          }}
+                          flashUnassign={flashUnassignId === b.id}
+                          onResize={(bookingId, nextStart, nextEnd) => handleResizeBooking(bookingId, nextStart, nextEnd)}
+                        />
+                      ))}
+
+                      <div className="absolute left-2 top-1 text-[11px] text-slate-500 bg-white/80 rounded px-1">{v.name}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
               </div>
             </div>
