@@ -912,7 +912,7 @@ export default function VehicleDispatchBoardMock() {
                 type="button"
                 onClick={() => shiftViewDate(-1)}
                 className="absolute left-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                style={{ writingMode: "vertical-rl" }}
+                style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
                 aria-label="前日の夜間予約へ移動"
                 title="前日の夜間予約へ移動"
               >
@@ -924,7 +924,7 @@ export default function VehicleDispatchBoardMock() {
                 type="button"
                 onClick={() => shiftViewDate(1)}
                 className="absolute right-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                style={{ writingMode: "vertical-rl" }}
+                style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
                 aria-label="翌日の夜間予約へ移動"
                 title="翌日の夜間予約へ移動"
               >
