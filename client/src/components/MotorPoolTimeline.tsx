@@ -24,33 +24,35 @@ const MotorPoolTimeline = ({ lanes, reservations, jobs, drivers }: MotorPoolTime
               <div
                 ref={provided.innerRef}
                 {...provided.droppableProps}
-                className="bg-slate-50 border border-slate-200 rounded-lg p-4"
+                className="relative bg-slate-50/80 border border-slate-200 rounded-lg p-4"
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-700">{lane.name}</h3>
-                    <p className="text-xs text-slate-500">{lane.reservationIds.length} reservations</p>
+                <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 border-l border-slate-200/60" />
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-700">{lane.name}</h3>
+                      <p className="text-xs text-slate-500">{lane.reservationIds.length} reservations</p>
+                    </div>
                   </div>
-                </div>
-                <div className="mt-3 space-y-3">
-                  {lane.reservationIds.map((reservationId, index) => {
-                    const reservation = reservations[reservationId];
-                    if (!reservation) {
-                      return null;
-                    }
-                    const assignedJob = reservation.jobId ? jobs[reservation.jobId] : undefined;
-                    const assignedDriver = reservation.driverId ? drivers[reservation.driverId] : undefined;
+                  <div className="mt-3 space-y-3">
+                    {lane.reservationIds.map((reservationId, index) => {
+                      const reservation = reservations[reservationId];
+                      if (!reservation) {
+                        return null;
+                      }
+                      const assignedJob = reservation.jobId ? jobs[reservation.jobId] : undefined;
+                      const assignedDriver = reservation.driverId ? drivers[reservation.driverId] : undefined;
 
-                    return (
-                      <Draggable draggableId={reservation.id} index={index} key={reservation.id}>
-                        {(dragProvided, dragSnapshot) => (
-                          <div
-                            ref={dragProvided.innerRef}
-                            {...dragProvided.draggableProps}
-                            className={`bg-white border border-slate-200 rounded-lg shadow-sm p-4 transition ${
-                              dragSnapshot.isDragging ? "ring-2 ring-sky-400" : ""
-                            }`}
-                          >
+                      return (
+                        <Draggable draggableId={reservation.id} index={index} key={reservation.id}>
+                          {(dragProvided, dragSnapshot) => (
+                            <div
+                              ref={dragProvided.innerRef}
+                              {...dragProvided.draggableProps}
+                              className={`bg-white border border-slate-300 rounded-lg shadow-md p-4 transition ${
+                                dragSnapshot.isDragging ? "ring-2 ring-sky-400" : ""
+                              }`}
+                            >
                             <div className="flex items-center justify-between">
                               <div>
                                 <p className="text-sm font-semibold text-slate-700">{reservation.vehicleName}</p>
@@ -148,7 +150,8 @@ const MotorPoolTimeline = ({ lanes, reservations, jobs, drivers }: MotorPoolTime
                       </Draggable>
                     );
                   })}
-                  {provided.placeholder}
+                    {provided.placeholder}
+                  </div>
                 </div>
               </div>
             )}
