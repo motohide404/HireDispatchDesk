@@ -1298,7 +1298,7 @@ function Drawer({ isMobile, onClose, children }: { isMobile: boolean; onClose: (
       {isMobile ? (
         <div className="absolute left-0 right-0 bottom-0 h-[70%] bg-white rounded-t-2xl shadow-2xl p-4 animate-in slide-in-from-bottom">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-medium">詳細検証ペイン</h3>
+            <h3 className="font-medium">詳細ボード</h3>
             <button className="text-sm px-2 py-1 border rounded" onClick={onClose}>
               閉じる
             </button>
@@ -1308,7 +1308,7 @@ function Drawer({ isMobile, onClose, children }: { isMobile: boolean; onClose: (
       ) : (
         <div className="absolute right-0 top-0 h-full w-[380px] bg-white rounded-l-2xl shadow-2xl p-4 animate-in slide-in-from-right">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-medium">詳細検証ペイン</h3>
+            <h3 className="font-medium">詳細ボード</h3>
             <button className="text-sm px-2 py-1 border rounded" onClick={onClose}>
               閉じる
             </button>
