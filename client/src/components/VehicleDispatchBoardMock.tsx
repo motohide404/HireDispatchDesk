@@ -1083,7 +1083,7 @@ export default function VehicleDispatchBoardMock() {
   return (
     <>
       <style>{`@keyframes badge-blink{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(251,191,36,0);border-color:inherit}50%{opacity:0.3;box-shadow:0 0 0 3px rgba(251,191,36,0.9);border-color:rgb(251 191 36)}}.badge-flash{animation:badge-blink 0.3s ease-in-out 5}`}</style>
-      <div className="w-full h-full p-4 bg-slate-50">
+      <div className="w-full p-4 bg-slate-50">
         <div className="flex flex-wrap items-end justify-between gap-4 mb-3">
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-end gap-3">
@@ -1200,7 +1200,7 @@ export default function VehicleDispatchBoardMock() {
           </div>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-start">
           <div className="bg-white rounded-2xl shadow p-3 overflow-auto relative max-h-[560px]" style={{ width: driverWidth }}>
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-medium">ドライバープール</h2>
@@ -1263,7 +1263,7 @@ export default function VehicleDispatchBoardMock() {
             ) : null}
             <div
               ref={centerRef}
-              className={`h-full w-full bg-white rounded-2xl shadow p-3 relative overflow-y-auto ${fullView ? "overflow-x-hidden" : "overflow-x-auto"}`}
+              className={`w-full bg-white rounded-2xl shadow p-3 relative overflow-y-auto ${fullView ? "overflow-x-hidden" : "overflow-x-auto"}`}
             >
               <div className="flex items-center justify-between mb-2 sticky left-0 top-0 z-10 bg-white pr-2">
                 <h2 className="font-medium">モータープール</h2>
