@@ -1,9 +1,15 @@
 import { useMemo, useState } from "react";
 import VehicleDispatchBoardMock from "./components/VehicleDispatchBoardMock";
 import VehicleLedgerPage from "./components/VehicleLedgerPage";
+import DriverLedgerPage from "./components/DriverLedgerPage";
+import {
+  driverLedger as initialDriverLedger,
+  type DriverDocumentInput,
+  type DriverLedgerInput
+} from "./data/drivers";
 import { vehicleLedger, vehicleMaintenanceRecords } from "./data/vehicles";
 
-type ActivePage = "dispatch" | "vehicles";
+type ActivePage = "dispatch" | "vehicles" | "drivers";
 
 type NavItem = {
   key: ActivePage;
@@ -18,6 +24,11 @@ const NAV_ITEMS: NavItem[] = [
     description: "ジョブ・ドライバー・車両の配車状況を確認します。"
   },
   {
+    key: "drivers",
+    label: "運転者台帳",
+    description: "ドライバーの資格・書類・点呼記録を管理します。"
+  },
+  {
     key: "vehicles",
     label: "車両台帳",
     description: "登録車両の車検・点検・整備情報を一覧管理します。"
@@ -26,10 +37,126 @@ const NAV_ITEMS: NavItem[] = [
 
 export default function App() {
   const [activePage, setActivePage] = useState<ActivePage>("dispatch");
+  const [drivers, setDrivers] = useState(initialDriverLedger);
 
   const activeDescription = useMemo(() => {
     return NAV_ITEMS.find((item) => item.key === activePage)?.description ?? "";
   }, [activePage]);
+
+  const handleAddDriver = (input: DriverLedgerInput) => {
+    setDrivers((prev) => {
+      const nextId = prev.reduce((max, driver) => Math.max(max, driver.id), 0) + 1;
+      const timestamp = Date.now();
+      const documents = (input.documents ?? []).map((doc, index) => ({
+        id: `doc-${timestamp}-${index}`,
+        type: doc.type,
+        name: doc.name,
+        uri: doc.uri,
+        notes: doc.notes,
+        uploadedAt: doc.uploadedAt ?? new Date().toISOString().slice(0, 10)
+      }));
+      return [
+        ...prev,
+        {
+          id: nextId,
+          tenantId: input.tenantId,
+          officeId: input.officeId,
+          code: input.code,
+          name: input.name,
+          nameKana: input.nameKana,
+          birthDate: input.birthDate,
+          address: input.address,
+          phone: input.phone,
+          email: input.email,
+          licenseClass: input.licenseClass,
+          licenseNumber: input.licenseNumber,
+          licenseExpiry: input.licenseExpiry,
+          employmentType: input.employmentType,
+          lastMedicalCheckAt: input.lastMedicalCheckAt,
+          medicalNotes: input.medicalNotes,
+          alcoholCheckMethod: input.alcoholCheckMethod,
+          lastAlcoholCheckAt: input.lastAlcoholCheckAt,
+          extUsageCountMonth: input.extUsageCountMonth ?? 0,
+          monthlyJobCount: input.monthlyJobCount ?? 0,
+          currentDispatchNumber: input.currentDispatchNumber ?? 0,
+          status: "active" as const,
+          documents,
+          notes: input.notes
+        }
+      ];
+    });
+  };
+
+  const handleArchiveDriver = (id: number) => {
+    setDrivers((prev) => prev.map((driver) => (driver.id === id ? { ...driver, status: "archived" } : driver)));
+  };
+
+  const handleRestoreDriver = (id: number) => {
+    setDrivers((prev) => prev.map((driver) => (driver.id === id ? { ...driver, status: "active" } : driver)));
+  };
+
+  const handleAddDriverDocument = (driverId: number, document: DriverDocumentInput) => {
+    setDrivers((prev) =>
+      prev.map((driver) => {
+        if (driver.id !== driverId) return driver;
+        const newDocument = {
+          id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          type: document.type,
+          name: document.name,
+          uri: document.uri,
+          notes: document.notes,
+          uploadedAt: document.uploadedAt ?? new Date().toISOString().slice(0, 10)
+        };
+        return { ...driver, documents: [...driver.documents, newDocument] };
+      })
+    );
+  };
+
+  const activeDriversForBoard = useMemo(
+    () =>
+      drivers
+        .filter((driver) => driver.status === "active")
+        .map((driver) => ({
+          id: driver.id,
+          name: driver.name,
+          code: driver.code,
+          extUsed: driver.extUsageCountMonth,
+          monthlyJobs: driver.monthlyJobCount,
+          currentDispatchNumber: driver.currentDispatchNumber
+        })),
+    [drivers]
+  );
+
+  let pageContent: JSX.Element;
+
+  if (activePage === "dispatch") {
+    pageContent = (
+      <VehicleDispatchBoardMock
+        drivers={activeDriversForBoard}
+        onOpenVehicleLedger={() => setActivePage("vehicles")}
+        onOpenDriverLedger={() => setActivePage("drivers")}
+      />
+    );
+  } else if (activePage === "vehicles") {
+    pageContent = (
+      <VehicleLedgerPage
+        vehicles={vehicleLedger}
+        maintenanceRecords={vehicleMaintenanceRecords}
+        onBackToDispatch={() => setActivePage("dispatch")}
+      />
+    );
+  } else {
+    pageContent = (
+      <DriverLedgerPage
+        drivers={drivers}
+        onAddDriver={handleAddDriver}
+        onArchiveDriver={handleArchiveDriver}
+        onRestoreDriver={handleRestoreDriver}
+        onAddDocument={handleAddDriverDocument}
+        onBackToDispatch={() => setActivePage("dispatch")}
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-100 text-slate-900">
@@ -64,15 +191,7 @@ export default function App() {
         </div>
       </header>
       <main className="flex-1">
-        {activePage === "dispatch" ? (
-          <VehicleDispatchBoardMock onOpenVehicleLedger={() => setActivePage("vehicles")} />
-        ) : (
-          <VehicleLedgerPage
-            vehicles={vehicleLedger}
-            maintenanceRecords={vehicleMaintenanceRecords}
-            onBackToDispatch={() => setActivePage("dispatch")}
-          />
-        )}
+        {pageContent}
       </main>
     </div>
   );
