@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-
-import { useFlashOnChange } from "../lib/useFlashOnChange";
 import type { DragEvent as ReactDragEvent, FormEvent, ReactNode } from "react";
 
+import { useFlashOnChange } from "../lib/useFlashOnChange";
+
 import "./VehicleDispatchBoardMock.css";
-import { vehiclesForDispatch } from "../data/vehicles";
+import type { DispatchVehicle } from "../data/vehicles";
 
 const hours = Array.from({ length: 25 }, (_, i) => i);
 const DRIVER_POOL_WIDTH_INIT = 240;
@@ -20,13 +20,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 type Interval = { start: number; end: number };
 
-const VEHICLES = vehiclesForDispatch;
 const VEHICLE_CLASS_LABELS: Record<string, string> = {
   sedan: "セダン",
   van: "ワゴン",
-  luxury: "ハイグレード"
+  luxury: "ハイグレード",
+  suv: "SUV",
+  minibus: "マイクロバス"
 };
-const vehicleMap = new Map(VEHICLES.map((v) => [v.id, v]));
 type DriverInfo = {
   id: number;
   name: string;
@@ -130,7 +130,7 @@ type BoardBooking = {
 
 const isAppJob = (booking: BoardBooking | undefined | null) => booking?.client?.type === "app";
 
-type VehicleInfo = (typeof VEHICLES)[number];
+type VehicleInfo = DispatchVehicle;
 
 type DrawerItem =
   | { type: "booking"; data: BoardBooking; vehicle: VehicleInfo | undefined }
@@ -377,8 +377,8 @@ function buildOvernightLabel(
   return `（${parts.join("・")}）`;
 }
 
-function bookingToJob(b: BoardBooking): UnassignedJob {
-  const vehicle = VEHICLES.find((v) => v.id === b.vehicleId);
+function bookingToJob(b: BoardBooking, vehicleLookup: Map<number, VehicleInfo>): UnassignedJob {
+  const vehicle = vehicleLookup.get(b.vehicleId);
   return {
     id: `J${b.id}`,
     title: b.title,
@@ -498,12 +498,14 @@ function computeFreeSlots(mergedIntervals: Interval[], dayStart: number, dayEnd:
 
 type VehicleDispatchBoardMockProps = {
   drivers: DriverInfo[];
+  vehicles: DispatchVehicle[];
   onOpenVehicleLedger?: () => void;
   onOpenDriverLedger?: () => void;
 };
 
 export default function VehicleDispatchBoardMock({
   drivers,
+  vehicles,
   onOpenVehicleLedger,
   onOpenDriverLedger
 }: VehicleDispatchBoardMockProps) {
@@ -535,6 +537,7 @@ export default function VehicleDispatchBoardMock({
     amount: "",
     note: ""
   });
+  const vehicleMap = useMemo(() => new Map(vehicles.map((vehicle) => [vehicle.id, vehicle])), [vehicles]);
   const driverMap = useMemo(() => new Map(drivers.map((driver) => [driver.id, driver])), [drivers]);
   const [flashUnassignId, setFlashUnassignId] = useState<number | null>(null);
   const [showJobAmounts, setShowJobAmounts] = useState(true);
@@ -558,7 +561,7 @@ export default function VehicleDispatchBoardMock({
   const vehicleDailySummaries = useMemo(() => {
     const dayStart = viewDateObj.getTime();
     if (!Number.isFinite(dayStart)) {
-      return VEHICLES.map((vehicle) => ({
+      return vehicles.map((vehicle) => ({
         vehicle,
         bookings: [],
         duties: [],
@@ -573,7 +576,7 @@ export default function VehicleDispatchBoardMock({
     const dayEnd = dayStart + DAY_MS;
     const totalMinutes = Math.round((dayEnd - dayStart) / 60000);
 
-    return VEHICLES.map((vehicle) => {
+    return vehicles.map((vehicle) => {
       const todaysBookings = bookings
         .filter((b) => b.vehicleId === vehicle.id)
         .map((b) => ({ booking: b, range: clipIntervalToDay(b.start, b.end, dayStart, dayEnd) }))
@@ -612,7 +615,7 @@ export default function VehicleDispatchBoardMock({
         utilization
       };
     });
-  }, [appDuties, bookings, viewDateObj]);
+  }, [appDuties, bookings, vehicles, viewDateObj]);
   const driverDailySummaries = useMemo(() => {
     const dayStart = viewDateObj.getTime();
     if (!Number.isFinite(dayStart)) {
@@ -728,7 +731,7 @@ export default function VehicleDispatchBoardMock({
     });
 
     return rows.sort((a, b) => a.sortKey - b.sortKey);
-  }, [appDuties, bookings, jobPool, viewDateObj]);
+  }, [appDuties, bookings, jobPool, vehicleMap, viewDateObj]);
   const jobAmountSummary = useMemo(() => {
     return dailyJobRows.reduce<{ total: number; hasAmount: boolean }>(
       (acc, row) => {
@@ -890,22 +893,22 @@ export default function VehicleDispatchBoardMock({
   );
   const bookingsByVehicle = useMemo(() => {
     const map = new Map<number, BoardBooking[]>();
-    VEHICLES.forEach((v) => map.set(v.id, []));
+    vehicles.forEach((v) => map.set(v.id, []));
     bookings.forEach((b) => {
       if (!map.has(b.vehicleId)) map.set(b.vehicleId, []);
       map.get(b.vehicleId)!.push(b);
     });
     return map;
-  }, [bookings]);
+  }, [bookings, vehicles]);
   const appDutiesByVehicle = useMemo(() => {
     const map = new Map<number, any[]>();
-    VEHICLES.forEach((v) => map.set(v.id, []));
+    vehicles.forEach((v) => map.set(v.id, []));
     appDuties.forEach((a) => {
       if (!map.has(a.vehicleId)) map.set(a.vehicleId, []);
       map.get(a.vehicleId)!.push(a);
     });
     return map;
-  }, [appDuties]);
+  }, [appDuties, vehicles]);
 
   const { hasPrevOvernight, hasNextOvernight } = useMemo(() => {
     let prev = false;
@@ -1271,7 +1274,7 @@ export default function VehicleDispatchBoardMock({
     const bookingId = Number(raw);
     const b = bookings.find((x) => x.id === bookingId);
     if (!b) return;
-    const newJob = bookingToJob(b);
+    const newJob = bookingToJob(b, vehicleMap);
     setJobPool((prev) => [newJob, ...prev]);
     setBookings((prev) => prev.filter((x) => x.id !== bookingId));
     setDrawerOpen(false);
@@ -1280,7 +1283,7 @@ export default function VehicleDispatchBoardMock({
   function returnBookingToJobPool(bookingId: number) {
     const b = bookings.find((x) => x.id === bookingId);
     if (!b) return;
-    const newJob = bookingToJob(b);
+    const newJob = bookingToJob(b, vehicleMap);
     setJobPool((prev) => [newJob, ...prev]);
     setBookings((prev) => prev.filter((x) => x.id !== bookingId));
     setDrawerOpen(false);
@@ -1495,7 +1498,7 @@ export default function VehicleDispatchBoardMock({
                 ) : null}
 
                 <div className="space-y-3 pt-6">
-                  {VEHICLES.map((v) => (
+                  {vehicles.map((v) => (
                     <div
                       key={v.id}
                       data-vehicle-id={v.id}
@@ -1926,6 +1929,7 @@ export default function VehicleDispatchBoardMock({
             onSubmit={handleCreateJob}
             viewDateLabel={viewDateDisplay}
             drivers={drivers}
+            vehicles={vehicles}
           />
         )}
 
@@ -1939,6 +1943,7 @@ export default function VehicleDispatchBoardMock({
               onRemoveAttachment={handleRemoveBookingAttachment}
               showAmount={showJobAmounts}
               driverLookup={driverMap}
+              vehicleLookup={vehicleMap}
             />
           </Drawer>
         )}
@@ -2657,7 +2662,8 @@ function JobFormModal({
   onChange,
   onSubmit,
   viewDateLabel,
-  drivers
+  drivers,
+  vehicles
 }: {
   draft: JobDraft;
   onClose: () => void;
@@ -2665,9 +2671,10 @@ function JobFormModal({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   viewDateLabel: string;
   drivers: DriverInfo[];
+  vehicles: DispatchVehicle[];
 }) {
   const vehicleClassOptions = Object.entries(VEHICLE_CLASS_LABELS);
-  const vehicleOptions = VEHICLES;
+  const vehicleOptions = vehicles;
   const driverOptions = drivers;
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
@@ -2907,7 +2914,8 @@ function DetailsPane({
   onAddAttachment,
   onRemoveAttachment,
   showAmount = true,
-  driverLookup
+  driverLookup,
+  vehicleLookup
 }: {
   item: DrawerItem | null;
   onReturn?: (id: number) => void;
@@ -2916,6 +2924,7 @@ function DetailsPane({
   onRemoveAttachment?: (bookingId: number, attachmentId: string) => void;
   showAmount?: boolean;
   driverLookup: Map<number, DriverInfo>;
+  vehicleLookup: Map<number, VehicleInfo>;
 }) {
   const [noteDraft, setNoteDraft] = useState("");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
@@ -2996,7 +3005,7 @@ function DetailsPane({
   } else {
     const job = data as UnassignedJob;
     const driver = job.driverId != null ? driverLookup.get(job.driverId) ?? null : null;
-    const assignedVehicle = job.vehicleId != null ? vehicleMap.get(job.vehicleId) ?? null : null;
+    const assignedVehicle = job.vehicleId != null ? vehicleLookup.get(job.vehicleId) ?? null : null;
     displayTitle = job.title ? `${job.title}（未割当）` : "未割当ジョブ";
     clientType = job.client?.type ?? "";
     clientName = job.client?.name ?? "";

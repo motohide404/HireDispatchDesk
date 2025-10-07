@@ -7,7 +7,7 @@ import {
   type DriverDocumentInput,
   type DriverLedgerInput
 } from "./data/drivers";
-import { vehicleLedger, vehicleMaintenanceRecords } from "./data/vehicles";
+import { createDispatchVehicles, vehicleLedger, vehicleMaintenanceRecords } from "./data/vehicles";
 
 type ActivePage = "dispatch" | "vehicles" | "drivers";
 
@@ -38,6 +38,7 @@ const NAV_ITEMS: NavItem[] = [
 export default function App() {
   const [activePage, setActivePage] = useState<ActivePage>("dispatch");
   const [drivers, setDrivers] = useState(initialDriverLedger);
+  const dispatchVehicles = useMemo(() => createDispatchVehicles(vehicleLedger), []);
 
   const activeDescription = useMemo(() => {
     return NAV_ITEMS.find((item) => item.key === activePage)?.description ?? "";
@@ -133,6 +134,7 @@ export default function App() {
     pageContent = (
       <VehicleDispatchBoardMock
         drivers={activeDriversForBoard}
+        vehicles={dispatchVehicles}
         onOpenVehicleLedger={() => setActivePage("vehicles")}
         onOpenDriverLedger={() => setActivePage("drivers")}
       />

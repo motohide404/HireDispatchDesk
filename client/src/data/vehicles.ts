@@ -208,11 +208,38 @@ export const vehicleMaintenanceRecords: VehicleMaintenanceRecord[] = [
   }
 ];
 
-export const vehiclesForDispatch = vehicleLedger.map((vehicle) => ({
-  id: vehicle.id,
-  name: vehicle.name,
-  plate: vehicle.plateNo,
-  class: vehicle.class
-}));
+export type DispatchVehicle = {
+  id: number;
+  vehiclesId: string;
+  officeId: string;
+  name: string;
+  plate: string;
+  vin: string;
+  class: VehicleClass;
+  seats: number;
+  ownerType: OwnerType;
+  shakenExpiry: string;
+  inspection3mExpiry: string;
+  maintenanceNotes?: string;
+  appsSupported: VehicleLedgerVehicle["appsSupported"];
+};
 
-export type DispatchVehicle = (typeof vehiclesForDispatch)[number];
+export function createDispatchVehicles(vehicles: VehicleLedgerVehicle[]): DispatchVehicle[] {
+  return vehicles.map((vehicle) => ({
+    id: vehicle.id,
+    vehiclesId: vehicle.vehiclesId,
+    officeId: vehicle.officeId,
+    name: vehicle.name,
+    plate: vehicle.plateNo,
+    vin: vehicle.vin,
+    class: vehicle.class,
+    seats: vehicle.seats,
+    ownerType: vehicle.ownerType,
+    shakenExpiry: vehicle.shakenExpiry,
+    inspection3mExpiry: vehicle.inspection3mExpiry,
+    maintenanceNotes: vehicle.maintenanceNotes,
+    appsSupported: vehicle.appsSupported
+  }));
+}
+
+export const vehiclesForDispatch = createDispatchVehicles(vehicleLedger);
