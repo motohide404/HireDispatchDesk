@@ -1503,9 +1503,7 @@ export default function VehicleDispatchBoardMock() {
               <h2 className="font-medium">ジョブプール（未割当）</h2>
               <span className="text-xs text-slate-500">{jobPool.length} 件</span>
             </div>
-            {jobPool.length === 0 ? (
-              <div className="text-slate-500 text-sm">未割当の仕事はありません。Excel風入力画面で登録するとここに表示されます。</div>
-            ) : (
+            {jobPool.length > 0 && (
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {jobPool.map((j) => {
                   const durMin = Math.round((new Date(j.end).getTime() - new Date(j.start).getTime()) / 60000);
