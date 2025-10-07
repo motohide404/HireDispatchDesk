@@ -1236,7 +1236,7 @@ export default function VehicleDispatchBoardMock() {
             <ResizeHandle value={driverWidth} setValue={setDriverWidth} min={DRIVER_POOL_WIDTH_MIN} max={DRIVER_POOL_WIDTH_MAX} side="right" />
           </div>
 
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             {hasPrevOvernight ? (
               <button
                 type="button"
