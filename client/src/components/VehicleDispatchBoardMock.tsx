@@ -729,6 +729,18 @@ export default function VehicleDispatchBoardMock() {
 
     return rows.sort((a, b) => a.sortKey - b.sortKey);
   }, [appDuties, bookings, jobPool, viewDateObj]);
+  const jobAmountSummary = useMemo(() => {
+    return dailyJobRows.reduce<{ total: number; hasAmount: boolean }>(
+      (acc, row) => {
+        if (row.amount != null) {
+          acc.total += row.amount;
+          acc.hasAmount = true;
+        }
+        return acc;
+      },
+      { total: 0, hasAmount: false }
+    );
+  }, [dailyJobRows]);
   const totalMonthlyJobs = useMemo(
     () => DRIVERS.reduce((acc, driver) => acc + driver.monthlyJobs, 0),
     []
@@ -1698,6 +1710,11 @@ export default function VehicleDispatchBoardMock() {
                 </div>
                 <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
                   <div>本日のジョブ {dailyJobRows.length} 件</div>
+                  {showJobAmounts && jobAmountSummary.hasAmount && (
+                    <div className="font-semibold text-slate-700">
+                      合計金額 {formatCurrency(jobAmountSummary.total)}
+                    </div>
+                  )}
                   <label className="inline-flex items-center gap-2">
                     <input
                       type="checkbox"
