@@ -4,6 +4,7 @@ import { useFlashOnChange } from "../lib/useFlashOnChange";
 import type { DragEvent as ReactDragEvent, FormEvent, ReactNode } from "react";
 
 import "./VehicleDispatchBoardMock.css";
+import { vehiclesForDispatch } from "../data/vehicles";
 
 const hours = Array.from({ length: 25 }, (_, i) => i);
 const DRIVER_POOL_WIDTH_INIT = 240;
@@ -19,12 +20,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 type Interval = { start: number; end: number };
 
-const VEHICLES = [
-  { id: 11, name: "セダンA", plate: "品川300 あ 12-34", class: "sedan" },
-  { id: 12, name: "ワゴンB", plate: "品川300 い 56-78", class: "van" },
-  { id: 13, name: "ハイグレードC", plate: "品川300 う 90-12", class: "luxury" },
-  { id: 14, name: "ワゴンD", plate: "品川300 え 34-56", class: "van" }
-];
+const VEHICLES = vehiclesForDispatch;
 const VEHICLE_CLASS_LABELS: Record<string, string> = {
   sedan: "セダン",
   van: "ワゴン",
@@ -507,7 +503,13 @@ function computeFreeSlots(mergedIntervals: Interval[], dayStart: number, dayEnd:
   return slots;
 }
 
-export default function VehicleDispatchBoardMock() {
+type VehicleDispatchBoardMockProps = {
+  onOpenVehicleLedger?: () => void;
+};
+
+export default function VehicleDispatchBoardMock({
+  onOpenVehicleLedger
+}: VehicleDispatchBoardMockProps) {
   const [fullView, setFullView] = useState(false);
   const [pxPerMin, setPxPerMin] = useState(DEFAULT_PX_PER_MIN);
   const [driverWidth, setDriverWidth] = useState(() => {
@@ -1854,7 +1856,11 @@ export default function VehicleDispatchBoardMock() {
                 </div>
                 <div className="flex flex-wrap gap-3">
                   <a
-                    href="/vehicle-ledger"
+                    href="#"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onOpenVehicleLedger?.();
+                    }}
                     className="inline-flex items-center justify-center gap-2 rounded-full bg-slate-800 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-slate-700"
                   >
                     車両情報ページを開く
