@@ -7,7 +7,7 @@ type DriverPoolProps = {
 
 const DriverPool = ({ drivers }: DriverPoolProps) => {
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-full flex flex-col">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-full flex flex-col overflow-hidden xl:max-h-[calc(100vh-240px)]">
       <div className="px-4 py-3 border-b border-slate-200">
         <h2 className="text-lg font-semibold text-slate-700">Driver Pool</h2>
         <p className="text-xs text-slate-500">Drag drivers onto reservations</p>
@@ -17,7 +17,7 @@ const DriverPool = ({ drivers }: DriverPoolProps) => {
           <div
             ref={provided.innerRef}
             {...provided.droppableProps}
-            className={`flex-1 overflow-y-auto px-4 py-4 space-y-3 transition-colors ${
+            className={`flex-1 overflow-y-auto px-4 py-4 space-y-3 transition-colors min-h-0 ${
               snapshot.isDraggingOver ? "bg-sky-50" : "bg-white"
             }`}
           >

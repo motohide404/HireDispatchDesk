@@ -10,14 +10,14 @@ type MotorPoolTimelineProps = {
 
 const MotorPoolTimeline = ({ lanes, reservations, jobs, drivers }: MotorPoolTimelineProps) => {
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-full flex flex-col">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-full flex flex-col overflow-hidden xl:max-h-[calc(100vh-240px)]">
       <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-700">Motor Pool Timeline</h2>
           <p className="text-xs text-slate-500">Reorder reservations or drop jobs & drivers into cards</p>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
         {lanes.map((lane) => (
           <Droppable droppableId={`lane-${lane.id}`} type="RESERVATION" key={lane.id}>
             {(provided) => (
