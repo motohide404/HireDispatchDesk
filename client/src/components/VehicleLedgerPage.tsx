@@ -99,6 +99,19 @@ export default function VehicleLedgerPage({
     return map;
   }, [maintenanceRecords]);
 
+  const shakenExpiryThisMonthCount = useMemo(() => {
+    const today = new Date();
+    const targetYear = today.getFullYear();
+    const targetMonth = today.getMonth();
+    return vehicles.filter((vehicle) => {
+      const expiry = new Date(vehicle.shakenExpiry);
+      if (Number.isNaN(expiry.getTime())) {
+        return false;
+      }
+      return expiry.getFullYear() === targetYear && expiry.getMonth() === targetMonth;
+    }).length;
+  }, [vehicles]);
+
   return (
     <div className="min-h-full bg-slate-100 pb-12">
       <div className="mx-auto w-full max-w-6xl px-6 pt-10">
@@ -127,21 +140,9 @@ export default function VehicleLedgerPage({
               <p className="mt-1 text-2xl font-semibold text-slate-900">{vehicles.length} 台</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="text-xs uppercase text-slate-500">本日車検期限の車両</p>
+              <p className="text-xs uppercase text-slate-500">今月車検期限の車両</p>
               <p className="mt-1 text-2xl font-semibold text-amber-600">
-                {
-                  vehicles.filter((vehicle) => {
-                    const expiry = new Date(vehicle.shakenExpiry);
-                    const today = new Date();
-                    return (
-                      !Number.isNaN(expiry.getTime()) &&
-                      expiry.getFullYear() === today.getFullYear() &&
-                      expiry.getMonth() === today.getMonth() &&
-                      expiry.getDate() === today.getDate()
-                    );
-                  }).length
-                }
-                台
+                {shakenExpiryThisMonthCount} 台
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
