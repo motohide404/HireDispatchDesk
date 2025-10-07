@@ -179,7 +179,7 @@ function PartnerDetailModal({ entry, mode, onClose, onSave }: PartnerDetailModal
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
             >
               閉じる
             </button>
@@ -187,7 +187,7 @@ function PartnerDetailModal({ entry, mode, onClose, onSave }: PartnerDetailModal
               <button
                 type="button"
                 onClick={handleSave}
-                className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-slate-800"
+                className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-slate-800"
               >
                 保存
               </button>
@@ -798,9 +798,9 @@ export default function PartnerLedgerPage() {
               <th className="whitespace-nowrap px-4 py-3">正式名称</th>
               <th className="whitespace-nowrap px-4 py-3">代表電話</th>
               <th className="whitespace-nowrap px-4 py-3">代表メール</th>
-              <th className="whitespace-nowrap px-4 py-3">当日連絡</th>
               <th className="whitespace-nowrap px-4 py-3 text-center">拠点数</th>
               <th className="whitespace-nowrap px-4 py-3 text-center">担当者数</th>
+              <th className="whitespace-nowrap px-4 py-3">担当者名</th>
               <th className="whitespace-nowrap px-4 py-3 text-center">操作</th>
             </tr>
           </thead>
@@ -833,9 +833,6 @@ export default function PartnerLedgerPage() {
                   <td className="px-4 py-3">
                     <span className="break-all text-slate-700">{entry.partner.email}</span>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    {entry.partner.emergencyContact ?? <span className="text-slate-400">-</span>}
-                  </td>
                   <td className="px-4 py-3 text-center text-xs text-slate-600">
                     {entry.offices.length}
                   </td>
@@ -843,18 +840,29 @@ export default function PartnerLedgerPage() {
                     {entry.contacts.length}
                   </td>
                   <td className="px-4 py-3">
+                    {entry.contacts.length > 0 ? (
+                      <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-slate-600">
+                        {entry.contacts.map((contact) => (
+                          <span key={contact.id}>{contact.name}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-slate-400">-</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-2">
                       <button
                         type="button"
                         onClick={() => handleOpenDetail(entry, "view")}
-                        className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                        className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
                       >
                         詳細
                       </button>
                       <button
                         type="button"
                         onClick={() => handleOpenDetail(entry, "edit")}
-                        className="inline-flex items-center justify-center rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white shadow transition hover:bg-slate-800"
+                        className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-3 py-1 text-xs font-semibold text-white shadow transition hover:bg-slate-800"
                       >
                         編集
                       </button>
