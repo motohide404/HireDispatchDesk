@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import VehicleDispatchBoardMock from "./components/VehicleDispatchBoardMock";
 import VehicleLedgerPage from "./components/VehicleLedgerPage";
 import DriverLedgerPage from "./components/DriverLedgerPage";
+import PartnerLedgerPage from "./components/PartnerLedgerPage";
 import {
   driverLedger as initialDriverLedger,
   type DriverDocumentInput,
@@ -9,7 +10,7 @@ import {
 } from "./data/drivers";
 import { createDispatchVehicles, vehicleLedger, vehicleMaintenanceRecords } from "./data/vehicles";
 
-type ActivePage = "dispatch" | "vehicles" | "drivers";
+type ActivePage = "dispatch" | "vehicles" | "drivers" | "partners";
 
 type NavItem = {
   key: ActivePage;
@@ -27,6 +28,11 @@ const NAV_ITEMS: NavItem[] = [
     key: "drivers",
     label: "運転者台帳",
     description: "ドライバーの資格・書類・点呼記録を管理します。"
+  },
+  {
+    key: "partners",
+    label: "取引先",
+    description: "取引先・拠点・担当者の情報を管理します。"
   },
   {
     key: "vehicles",
@@ -146,6 +152,8 @@ export default function App() {
         maintenanceRecords={vehicleMaintenanceRecords}
       />
     );
+  } else if (activePage === "partners") {
+    pageContent = <PartnerLedgerPage />;
   } else {
     pageContent = (
       <DriverLedgerPage
