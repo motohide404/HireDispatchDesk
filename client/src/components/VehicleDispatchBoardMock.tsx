@@ -137,6 +137,13 @@ type BoardBooking = {
 
 const isAppJob = (booking: BoardBooking | undefined | null) => booking?.client?.type === "app";
 
+type VehicleInfo = (typeof VEHICLES)[number];
+
+type DrawerItem =
+  | { type: "booking"; data: BoardBooking; vehicle: VehicleInfo | undefined }
+  | { type: "duty"; data: AppDuty; vehicle: VehicleInfo | undefined }
+  | { type: "pool"; data: UnassignedJob; vehicle?: undefined };
+
 const BOOKINGS: BoardBooking[] = [
   {
     id: 201,
@@ -269,6 +276,7 @@ type DailyJobRow = {
   source: "booking" | "duty" | "pool";
   sourceLabel: string;
   sortKey: number;
+  drawerItem: DrawerItem;
 };
 
 type CurrentTimePosition = { visible: boolean; x: number };
@@ -487,8 +495,8 @@ export default function VehicleDispatchBoardMock() {
     return DRIVER_POOL_WIDTH_INIT;
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerItem, setDrawerItem] = useState<any>(null);
-  const [selected, setSelected] = useState<{ type: "booking" | "duty"; id: number | string } | null>(null);
+  const [drawerItem, setDrawerItem] = useState<DrawerItem | null>(null);
+  const [selected, setSelected] = useState<{ type: DrawerItem["type"]; id: number | string } | null>(null);
   const [bookings, setBookings] = useState<BoardBooking[]>(BOOKINGS);
   const [appDuties, setAppDuties] = useState<AppDuty[]>(APP_DUTIES_INIT);
   const [jobPool, setJobPool] = useState<UnassignedJob[]>(UNASSIGNED_JOBS);
@@ -623,7 +631,8 @@ export default function VehicleDispatchBoardMock() {
     bookings.forEach((booking) => {
       const clipped = clipIntervalToDay(booking.start, booking.end, dayStart, dayEnd);
       if (!clipped) return;
-      const vehicleName = vehicleMap.get(booking.vehicleId)?.name ?? "未割当";
+      const vehicle = vehicleMap.get(booking.vehicleId);
+      const vehicleName = vehicle?.name ?? "未割当";
       const driverName =
         booking.driverId != null ? driverMap.get(booking.driverId)?.name ?? "未割当" : "未割当";
       rows.push({
@@ -637,14 +646,16 @@ export default function VehicleDispatchBoardMock() {
         attachments: booking.attachments,
         source: "booking",
         sourceLabel: "予約",
-        sortKey: clipped.start
+        sortKey: clipped.start,
+        drawerItem: { type: "booking", data: booking, vehicle }
       });
     });
 
     appDuties.forEach((duty) => {
       const clipped = clipIntervalToDay(duty.start, duty.end, dayStart, dayEnd);
       if (!clipped) return;
-      const vehicleName = vehicleMap.get(duty.vehicleId)?.name ?? "未割当";
+      const vehicle = vehicleMap.get(duty.vehicleId);
+      const vehicleName = vehicle?.name ?? "未割当";
       const driverName = duty.driverId != null ? driverMap.get(duty.driverId)?.name ?? "未割当" : "未割当";
       rows.push({
         id: `duty-${duty.id}`,
@@ -657,7 +668,8 @@ export default function VehicleDispatchBoardMock() {
         attachments: undefined,
         source: "duty",
         sourceLabel: "アプリ",
-        sortKey: clipped.start
+        sortKey: clipped.start,
+        drawerItem: { type: "duty", data: duty, vehicle }
       });
     });
 
@@ -678,7 +690,8 @@ export default function VehicleDispatchBoardMock() {
         attachments: undefined,
         source: "pool",
         sourceLabel: "ジョブプール",
-        sortKey: clipped.start
+        sortKey: clipped.start,
+        drawerItem: { type: "pool", data: job }
       });
     });
 
@@ -853,7 +866,7 @@ export default function VehicleDispatchBoardMock() {
     setPxPerMin((p) => Math.min(6, Math.max(0.5, p + delta)));
   };
 
-  const openDrawer = (item: any) => {
+  const openDrawer = (item: DrawerItem) => {
     setDrawerItem(item);
     setSelected({ type: item.type, id: item.data.id });
     setDrawerOpen(true);
@@ -1652,13 +1665,30 @@ export default function VehicleDispatchBoardMock() {
                         </td>
                       </tr>
                     ) : (
-                      dailyJobRows.map((row) => (
-                        <tr key={row.id} className="transition-colors hover:bg-slate-50/70">
-                          <td className="px-5 py-3 align-top">
-                            <div className="flex flex-col gap-1">
-                              <span className="font-medium text-slate-800">{row.name}</span>
-                              <span className="w-fit rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-                                {row.sourceLabel}
+                      dailyJobRows.map((row) => {
+                        const detailItem = row.drawerItem;
+                        const isSelected =
+                          selected?.type === detailItem.type && selected?.id === detailItem.data.id;
+                        return (
+                          <tr
+                            key={row.id}
+                            className={`transition-colors hover:bg-slate-50/70 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300 focus:ring-offset-0 ${
+                              isSelected ? "bg-slate-100" : ""
+                            }`}
+                            onClick={() => openDrawer(detailItem)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                openDrawer(detailItem);
+                              }
+                            }}
+                            tabIndex={0}
+                          >
+                            <td className="px-5 py-3 align-top">
+                              <div className="flex flex-col gap-1">
+                                <span className="font-medium text-slate-800">{row.name}</span>
+                                <span className="w-fit rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                                  {row.sourceLabel}
                               </span>
                               {row.noteSnippet && (
                                 <span className="max-w-[260px] truncate text-xs text-slate-500">
@@ -1693,8 +1723,9 @@ export default function VehicleDispatchBoardMock() {
                               {row.amount != null ? formatCurrency(row.amount) : "—"}
                             </td>
                           )}
-                        </tr>
-                      ))
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -2697,7 +2728,7 @@ function DetailsPane({
   onRemoveAttachment,
   showAmount = true
 }: {
-  item: any;
+  item: DrawerItem | null;
   onReturn?: (id: number) => void;
   onUpdateNote?: (id: number, note: string) => void;
   onAddAttachment?: (id: number, files: FileList) => void;
@@ -2747,29 +2778,69 @@ function DetailsPane({
 
   if (!item) return <div className="text-slate-500 text-sm">項目が選択されていません</div>;
   const type = item.type;
-  const v = item.vehicle as any;
-  const data = item.data as any;
-  const driver = data.driverId ? driverMap.get(data.driverId) : null;
+  const data = item.data;
+  const vehicle = item.vehicle;
   const isBooking = type === "booking";
-  const displayTitle = isBooking ? data.title : `${data.service ?? "アプリ配車"}`;
-  const clientType = isBooking ? data.client?.type ?? "" : "アプリ";
-  const clientName = isBooking ? data.client?.name ?? "" : data.service ?? "配車依頼";
+  const isDuty = type === "duty";
+
+  let displayTitle = "";
+  let clientType = "";
+  let clientName = "";
+  let driverLabel = "未割当";
+  let vehicleLabel = "未割当";
+  let amount: number | undefined;
+  let attachments: BookingAttachment[] = [];
+
+  if (isBooking) {
+    const booking = data as BoardBooking;
+    const driver = booking.driverId != null ? driverMap.get(booking.driverId) ?? null : null;
+    displayTitle = booking.title;
+    clientType = booking.client?.type ?? "";
+    clientName = booking.client?.name ?? "";
+    driverLabel = driver ? `${driver.name}（${driver.code}）` : "未割当";
+    vehicleLabel = vehicle ? `${vehicle.name}　${vehicle.plate}` : "未割当";
+    amount = booking.amount;
+    attachments = (booking.attachments as BookingAttachment[] | undefined) ?? [];
+  } else if (isDuty) {
+    const duty = data as AppDuty;
+    const driver = duty.driverId != null ? driverMap.get(duty.driverId) ?? null : null;
+    displayTitle = duty.service ? `${duty.service}（アプリ）` : "アプリ配車";
+    clientType = "アプリ";
+    clientName = duty.service ?? "配車依頼";
+    driverLabel = driver ? `${driver.name}（${driver.code}）` : "未割当";
+    vehicleLabel = vehicle ? `${vehicle.name}　${vehicle.plate}` : "未割当";
+    amount = duty.amount;
+  } else {
+    const job = data as UnassignedJob;
+    displayTitle = job.title ? `${job.title}（未割当）` : "未割当ジョブ";
+    clientType = job.client?.type ?? "";
+    clientName = job.client?.name ?? "";
+    driverLabel = "割当待ち";
+    vehicleLabel = job.preferClass
+      ? `${VEHICLE_CLASS_LABELS[job.preferClass] ?? job.preferClass}希望`
+      : "未割当";
+    amount = job.amount;
+  }
+
   const clientLabel = [clientType, clientName].filter(Boolean).join("/") || "未設定";
   const crossesMidnight = new Date(data.end) <= new Date(data.start);
-  const amount = typeof data.amount === "number" ? data.amount : undefined;
-  const attachments: BookingAttachment[] = isBooking
-    ? ((data.attachments as BookingAttachment[] | undefined) ?? [])
-    : [];
 
   const handleAttachmentInput = (files: FileList | null) => {
     if (!isBooking || !files || files.length === 0 || !onAddAttachment) return;
-    onAddAttachment(data.id, files);
+    onAddAttachment((data as BoardBooking).id, files);
   };
 
   const handleAttachmentRemove = (attachmentId: string) => {
     if (!isBooking) return;
-    onRemoveAttachment?.(data.id, attachmentId);
+    onRemoveAttachment?.((data as BoardBooking).id, attachmentId);
   };
+
+  const noteReadOnlyValue = isDuty
+    ? "アプリ配車のメモは管制システム側で管理します。必要に応じてジョブに変換して共有してください。"
+    : "ジョブプール案件の詳細メモはExcel風入力画面で管理します。割当後に予約へ変換して共有してください。";
+  const noteReadOnlyCaption = isDuty
+    ? "※ レイアウトは通常配車と同じ構成で表示しています（参照のみ）。"
+    : "※ ジョブプール上の案件はここでは編集できません（モック）。";
 
   return (
     <div className="space-y-3 text-sm">
@@ -2790,14 +2861,12 @@ function DetailsPane({
 
       <section>
         <h4 className="text-xs uppercase tracking-wider text-slate-500 mb-1">ドライバー</h4>
-        <div>{driver ? `${driver.name}（${driver.code}）` : "未割当"}</div>
+        <div>{driverLabel}</div>
       </section>
 
       <section>
         <h4 className="text-xs uppercase tracking-wider text-slate-500 mb-1">車両</h4>
-        <div>
-          {v?.name}　<span className="text-slate-500">{v?.plate}</span>
-        </div>
+        <div>{vehicleLabel}</div>
       </section>
 
       {isBooking && onReturn && (
@@ -2805,7 +2874,7 @@ function DetailsPane({
           <h4 className="text-xs uppercase tracking-wider text-slate-500 mb-1">操作</h4>
           <button
             className="px-3 py-1 text-sm border rounded hover:bg-slate-50"
-            onClick={() => onReturn(data.id)}
+            onClick={() => onReturn((data as BoardBooking).id)}
             title="この予約を削除してジョブプールに戻す"
           >
             ジョブプールへ戻す
@@ -2918,10 +2987,10 @@ function DetailsPane({
             <textarea
               className="w-full cursor-not-allowed rounded border border-slate-200 bg-slate-50 px-2 py-1 text-sm text-slate-500"
               rows={4}
-              value="アプリ配車のメモは管制システム側で管理します。必要に応じてジョブに変換して共有してください。"
+              value={noteReadOnlyValue}
               readOnly
             />
-            <p className="text-xs text-slate-500">※ レイアウトは通常配車と同じ構成で表示しています（参照のみ）。</p>
+            <p className="text-xs text-slate-500">{noteReadOnlyCaption}</p>
           </div>
         )}
       </section>
