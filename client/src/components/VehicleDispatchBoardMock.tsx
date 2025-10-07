@@ -1421,27 +1421,6 @@ export default function VehicleDispatchBoardMock() {
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-3">
-          <a
-            href="#driver-info"
-            className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100"
-          >
-            ドライバー情報
-          </a>
-          <a
-            href="#vehicle-info"
-            className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100"
-          >
-            車両情報
-          </a>
-          <a
-            href="#customer-info"
-            className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100"
-          >
-            顧客情報
-          </a>
-        </div>
-
         <div className="mt-8 space-y-8">
           <section id="driver-info" className="scroll-mt-24">
             <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
