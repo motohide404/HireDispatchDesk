@@ -47,6 +47,10 @@ type JobDraft = {
   startTime: string;
   endTime: string;
   preferClass: string;
+  vehicleId: string;
+  driverId: string;
+  amount: string;
+  note: string;
 };
 
 const DRIVERS: DriverInfo[] = [
@@ -240,7 +244,10 @@ type UnassignedJob = {
   start: string;
   end: string;
   preferClass: string;
+  vehicleId: number | null;
+  driverId: number | null;
   amount?: number;
+  note?: string;
 };
 
 const UNASSIGNED_JOBS: UnassignedJob[] = [
@@ -251,7 +258,10 @@ const UNASSIGNED_JOBS: UnassignedJob[] = [
     start: "2025-10-03T14:00:00+09:00",
     end: "2025-10-03T15:00:00+09:00",
     preferClass: "sedan",
-    amount: 15000
+    vehicleId: null,
+    driverId: null,
+    amount: 15000,
+    note: "VIP顧客の送迎。余裕を持った到着を希望"
   },
   {
     id: "J102",
@@ -260,6 +270,8 @@ const UNASSIGNED_JOBS: UnassignedJob[] = [
     start: "2025-10-03T20:30:00+09:00",
     end: "2025-10-03T21:30:00+09:00",
     preferClass: "luxury",
+    vehicleId: null,
+    driverId: null,
     amount: 25000
   }
 ];
@@ -376,9 +388,20 @@ function buildOvernightLabel(
   return `（${parts.join("・")}）`;
 }
 
-function bookingToJob(b: BoardBooking) {
+function bookingToJob(b: BoardBooking): UnassignedJob {
   const vehicle = VEHICLES.find((v) => v.id === b.vehicleId);
-  return { id: `J${b.id}`, title: b.title, client: b.client, start: b.start, end: b.end, preferClass: vehicle?.class || "sedan" };
+  return {
+    id: `J${b.id}`,
+    title: b.title,
+    client: b.client,
+    start: b.start,
+    end: b.end,
+    preferClass: vehicle?.class || "sedan",
+    vehicleId: null,
+    driverId: null,
+    amount: b.amount,
+    note: b.note
+  };
 }
 
 function applyBookingMove(
@@ -501,13 +524,17 @@ export default function VehicleDispatchBoardMock() {
   const [appDuties, setAppDuties] = useState<AppDuty[]>(APP_DUTIES_INIT);
   const [jobPool, setJobPool] = useState<UnassignedJob[]>(UNASSIGNED_JOBS);
   const [jobFormOpen, setJobFormOpen] = useState(false);
-  const [jobDraft, setJobDraft] = useState({
+  const [jobDraft, setJobDraft] = useState<JobDraft>({
     title: "",
     clientType: "個人",
     clientName: "",
     startTime: "09:00",
     endTime: "10:00",
-    preferClass: "sedan"
+    preferClass: "sedan",
+    vehicleId: "",
+    driverId: "",
+    amount: "",
+    note: ""
   });
   const [flashUnassignId, setFlashUnassignId] = useState<number | null>(null);
   const [showJobAmounts, setShowJobAmounts] = useState(true);
@@ -676,17 +703,22 @@ export default function VehicleDispatchBoardMock() {
     jobPool.forEach((job) => {
       const clipped = clipIntervalToDay(job.start, job.end, dayStart, dayEnd);
       if (!clipped) return;
-      const vehicleName = job.preferClass
-        ? `${VEHICLE_CLASS_LABELS[job.preferClass] ?? job.preferClass}希望`
-        : "未割当";
+      const vehicle = job.vehicleId != null ? vehicleMap.get(job.vehicleId) ?? null : null;
+      const driver = job.driverId != null ? driverMap.get(job.driverId) ?? null : null;
+      const vehicleName = vehicle
+        ? vehicle.name
+        : job.preferClass
+          ? `${VEHICLE_CLASS_LABELS[job.preferClass] ?? job.preferClass}希望`
+          : "未割当";
+      const driverName = driver ? driver.name : "割当待ち";
       rows.push({
         id: `pool-${job.id}`,
         name: `${job.title}（未割当）`,
         timeLabel: `${formatTimeInJst(clipped.start)}〜${formatTimeInJst(clipped.end)}`,
         vehicleName,
-        driverName: "割当待ち",
+        driverName,
         amount: job.amount,
-        noteSnippet: undefined,
+        noteSnippet: createNoteSnippet(job.note),
         attachments: undefined,
         source: "pool",
         sourceLabel: "ジョブプール",
@@ -713,7 +745,11 @@ export default function VehicleDispatchBoardMock() {
       clientName: "",
       startTime: "09:00",
       endTime: "10:00",
-      preferClass: "sedan"
+      preferClass: "sedan",
+      vehicleId: "",
+      driverId: "",
+      amount: "",
+      note: ""
     });
   };
   const openJobForm = () => {
@@ -745,13 +781,33 @@ export default function VehicleDispatchBoardMock() {
     if (endDate <= startDate) {
       endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
     }
-    const newJob = {
+    const driverId = jobDraft.driverId ? Number(jobDraft.driverId) : null;
+    if (jobDraft.driverId && Number.isNaN(driverId)) {
+      alert("ドライバーの選択が正しくありません");
+      return;
+    }
+    const vehicleId = jobDraft.vehicleId ? Number(jobDraft.vehicleId) : null;
+    if (jobDraft.vehicleId && Number.isNaN(vehicleId)) {
+      alert("車両の選択が正しくありません");
+      return;
+    }
+    const amountValue = jobDraft.amount.trim() ? Number(jobDraft.amount.trim()) : undefined;
+    if (amountValue != null && Number.isNaN(amountValue)) {
+      alert("金額は数値で入力してください");
+      return;
+    }
+    const noteValue = jobDraft.note.trim();
+    const newJob: UnassignedJob = {
       id: `J${Date.now()}`,
       title: trimmedTitle,
       client: { type: jobDraft.clientType.trim() || "その他", name: trimmedClientName },
       start: toJstIso(startDate),
       end: toJstIso(endDate),
-      preferClass: jobDraft.preferClass || "sedan"
+      preferClass: jobDraft.preferClass || "sedan",
+      vehicleId,
+      driverId,
+      amount: amountValue,
+      note: noteValue ? noteValue : undefined
     };
     setJobPool((prev) => [...prev, newJob]);
     resetJobDraft();
@@ -1530,10 +1586,15 @@ export default function VehicleDispatchBoardMock() {
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {jobPool.map((j) => {
                   const durMin = Math.round((new Date(j.end).getTime() - new Date(j.start).getTime()) / 60000);
+                  const vehicle = j.vehicleId != null ? vehicleMap.get(j.vehicleId) ?? null : null;
+                  const driver = j.driverId != null ? driverMap.get(j.driverId) ?? null : null;
+                  const classLabel = j.preferClass ? VEHICLE_CLASS_LABELS[j.preferClass] ?? j.preferClass : "";
+                  const vehicleLabel = vehicle ? `${vehicle.name}` : classLabel ? `${classLabel}希望` : "車両未設定";
+                  const driverLabel = driver ? `${driver.name}（${driver.code}）` : "割当待ち";
                   return (
                     <div
                       key={j.id}
-                      className="min-w-[220px] border rounded-xl p-2 hover:bg-slate-50 cursor-grab active:cursor-grabbing"
+                      className="min-w-[240px] border rounded-xl p-2 hover:bg-slate-50 cursor-grab active:cursor-grabbing"
                       draggable
                       onDragStart={(e) => {
                         e.dataTransfer.effectAllowed = "copyMove";
@@ -1544,12 +1605,19 @@ export default function VehicleDispatchBoardMock() {
                     >
                       <div className="flex items-center justify-between">
                         <div className="font-medium truncate">{j.title}</div>
-                        <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-700">{j.preferClass}</span>
+                        {classLabel && (
+                          <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-700">{classLabel}</span>
+                        )}
                       </div>
                       <div className="text-xs text-slate-600">
                         {fmt(j.start)} - {fmt(j.end)}（{durMin}分）
                       </div>
                       <div className="text-xs text-slate-600">依頼元：{j.client?.name}</div>
+                      <div className="text-[11px] text-slate-500 mt-1">車両：{vehicleLabel}</div>
+                      <div className="text-[11px] text-slate-500">ドライバー：{driverLabel}</div>
+                      {j.amount != null && (
+                        <div className="text-[11px] text-slate-500">金額：{formatCurrency(j.amount)}</div>
+                      )}
                     </div>
                   );
                 })}
@@ -2559,6 +2627,8 @@ function JobFormModal({
   viewDateLabel: string;
 }) {
   const vehicleClassOptions = Object.entries(VEHICLE_CLASS_LABELS);
+  const vehicleOptions = VEHICLES;
+  const driverOptions = DRIVERS;
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
       <div className="absolute inset-0" onClick={onClose} />
@@ -2669,6 +2739,76 @@ function JobFormModal({
                 </option>
               ))}
             </select>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-vehicle">
+                配車車両
+              </label>
+              <select
+                id="job-vehicle"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                value={draft.vehicleId}
+                onChange={(e) => onChange("vehicleId", e.target.value)}
+              >
+                <option value="">未割当（クラス指定のみ）</option>
+                {vehicleOptions.map((vehicle) => (
+                  <option key={vehicle.id} value={String(vehicle.id)}>
+                    {vehicle.name}　{vehicle.plate}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-slate-500">詳細ボードと同じ車両マスタから選択できます。</p>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-driver">
+                担当ドライバー
+              </label>
+              <select
+                id="job-driver"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                value={draft.driverId}
+                onChange={(e) => onChange("driverId", e.target.value)}
+              >
+                <option value="">割当待ち</option>
+                {driverOptions.map((driver) => (
+                  <option key={driver.id} value={String(driver.id)}>
+                    {driver.name}（{driver.code}）
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-slate-500">ジョブタイムラインで使用しているドライバーデータを参照しています。</p>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-amount">
+                見積金額（税抜）
+              </label>
+              <input
+                id="job-amount"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                value={draft.amount}
+                onChange={(e) => onChange("amount", e.target.value)}
+                placeholder="例）20000"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-note">
+              共有メモ
+            </label>
+            <textarea
+              id="job-note"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              rows={3}
+              value={draft.note}
+              onChange={(e) => onChange("note", e.target.value)}
+              placeholder="詳細ボードに表示される社内共有メモ"
+            />
           </div>
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
@@ -2790,6 +2930,7 @@ function DetailsPane({
   let vehicleLabel = "未割当";
   let amount: number | undefined;
   let attachments: BookingAttachment[] = [];
+  let jobNote: string | undefined;
 
   if (isBooking) {
     const booking = data as BoardBooking;
@@ -2812,14 +2953,19 @@ function DetailsPane({
     amount = duty.amount;
   } else {
     const job = data as UnassignedJob;
+    const driver = job.driverId != null ? driverMap.get(job.driverId) ?? null : null;
+    const assignedVehicle = job.vehicleId != null ? vehicleMap.get(job.vehicleId) ?? null : null;
     displayTitle = job.title ? `${job.title}（未割当）` : "未割当ジョブ";
     clientType = job.client?.type ?? "";
     clientName = job.client?.name ?? "";
-    driverLabel = "割当待ち";
-    vehicleLabel = job.preferClass
-      ? `${VEHICLE_CLASS_LABELS[job.preferClass] ?? job.preferClass}希望`
-      : "未割当";
+    driverLabel = driver ? `${driver.name}（${driver.code}）` : "割当待ち";
+    vehicleLabel = assignedVehicle
+      ? `${assignedVehicle.name}　${assignedVehicle.plate}`
+      : job.preferClass
+        ? `${VEHICLE_CLASS_LABELS[job.preferClass] ?? job.preferClass}希望`
+        : "未割当";
     amount = job.amount;
+    jobNote = job.note;
   }
 
   const clientLabel = [clientType, clientName].filter(Boolean).join("/") || "未設定";
@@ -2835,12 +2981,15 @@ function DetailsPane({
     onRemoveAttachment?.((data as BoardBooking).id, attachmentId);
   };
 
+  const jobNoteNormalized = jobNote?.trim();
   const noteReadOnlyValue = isDuty
     ? "アプリ配車のメモは管制システム側で管理します。必要に応じてジョブに変換して共有してください。"
-    : "ジョブプール案件の詳細メモはExcel風入力画面で管理します。割当後に予約へ変換して共有してください。";
+    : jobNoteNormalized || "ジョブプール案件の詳細メモはExcel風入力画面で管理します。割当後に予約へ変換して共有してください。";
   const noteReadOnlyCaption = isDuty
     ? "※ レイアウトは通常配車と同じ構成で表示しています（参照のみ）。"
-    : "※ ジョブプール上の案件はここでは編集できません（モック）。";
+    : jobNoteNormalized
+      ? "※ ジョブプール案件のメモはExcel風入力画面と同期された内容を表示しています（参照のみ）。"
+      : "※ ジョブプール上の案件はここでは編集できません（モック）。";
 
   return (
     <div className="space-y-3 text-sm">
