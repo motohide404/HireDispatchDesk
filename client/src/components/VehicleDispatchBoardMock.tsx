@@ -264,6 +264,8 @@ type DailyJobRow = {
   vehicleName: string;
   driverName: string;
   amount?: number;
+  noteSnippet?: string;
+  attachments?: BookingAttachment[];
   source: "booking" | "duty" | "pool";
   sourceLabel: string;
   sortKey: number;
@@ -631,6 +633,8 @@ export default function VehicleDispatchBoardMock() {
         vehicleName,
         driverName,
         amount: booking.amount,
+        noteSnippet: createNoteSnippet(booking.note),
+        attachments: booking.attachments,
         source: "booking",
         sourceLabel: "予約",
         sortKey: clipped.start
@@ -649,6 +653,8 @@ export default function VehicleDispatchBoardMock() {
         vehicleName,
         driverName,
         amount: duty.amount,
+        noteSnippet: undefined,
+        attachments: undefined,
         source: "duty",
         sourceLabel: "アプリ",
         sortKey: clipped.start
@@ -668,6 +674,8 @@ export default function VehicleDispatchBoardMock() {
         vehicleName,
         driverName: "割当待ち",
         amount: job.amount,
+        noteSnippet: undefined,
+        attachments: undefined,
         source: "pool",
         sourceLabel: "ジョブプール",
         sortKey: clipped.start
@@ -1652,6 +1660,29 @@ export default function VehicleDispatchBoardMock() {
                               <span className="w-fit rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                                 {row.sourceLabel}
                               </span>
+                              {row.noteSnippet && (
+                                <span className="max-w-[260px] truncate text-xs text-slate-500">
+                                  {row.noteSnippet}
+                                </span>
+                              )}
+                              {row.attachments && row.attachments.length > 0 && (
+                                <div className="flex flex-wrap gap-1 pt-1 text-[11px] text-slate-500">
+                                  {row.attachments.slice(0, 3).map((attachment) => (
+                                    <span
+                                      key={attachment.id}
+                                      className="inline-flex max-w-[160px] items-center gap-1 truncate rounded-full bg-slate-100 px-2 py-0.5 text-slate-600"
+                                    >
+                                      <span aria-hidden>📎</span>
+                                      <span className="truncate">{attachment.name}</span>
+                                    </span>
+                                  ))}
+                                  {row.attachments.length > 3 && (
+                                    <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-slate-500">
+                                      +{row.attachments.length - 3}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </td>
                           <td className="px-5 py-3 align-top text-slate-600">{row.timeLabel}</td>
@@ -1774,6 +1805,7 @@ export default function VehicleDispatchBoardMock() {
               onUpdateNote={handleUpdateBookingNote}
               onAddAttachment={handleAddBookingAttachments}
               onRemoveAttachment={handleRemoveBookingAttachment}
+              showAmount={showJobAmounts}
             />
           </Drawer>
         )}
@@ -2662,17 +2694,22 @@ function DetailsPane({
   onReturn,
   onUpdateNote,
   onAddAttachment,
-  onRemoveAttachment
+  onRemoveAttachment,
+  showAmount = true
 }: {
   item: any;
   onReturn?: (id: number) => void;
   onUpdateNote?: (id: number, note: string) => void;
   onAddAttachment?: (id: number, files: FileList) => void;
   onRemoveAttachment?: (bookingId: number, attachmentId: string) => void;
+  showAmount?: boolean;
 }) {
   const [noteDraft, setNoteDraft] = useState("");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
-  const notePreview = useMemo<ReactNode>(() => renderNoteWithLinks(noteDraft), [noteDraft]);
+  const notePreview = useMemo<ReactNode>(() => {
+    const truncated = truncateNoteText(noteDraft);
+    return renderNoteWithLinks(truncated);
+  }, [noteDraft]);
 
   useEffect(() => {
     if (!item || item.type !== "booking") {
@@ -2719,6 +2756,7 @@ function DetailsPane({
   const clientName = isBooking ? data.client?.name ?? "" : data.service ?? "配車依頼";
   const clientLabel = [clientType, clientName].filter(Boolean).join("/") || "未設定";
   const crossesMidnight = new Date(data.end) <= new Date(data.start);
+  const amount = typeof data.amount === "number" ? data.amount : undefined;
   const attachments: BookingAttachment[] = isBooking
     ? ((data.attachments as BookingAttachment[] | undefined) ?? [])
     : [];
@@ -2743,6 +2781,11 @@ function DetailsPane({
           {crossesMidnight ? "（→翌）" : ""}
         </div>
         <div className="text-slate-600">依頼元：{clientLabel}</div>
+        {showAmount && (
+          <div className="text-slate-600">
+            金額：{amount != null ? formatCurrency(amount) : "—"}
+          </div>
+        )}
       </section>
 
       <section>
@@ -2973,6 +3016,21 @@ function renderPlainTextWithBreaks(segment: string, keyPrefix: string): ReactNod
     }
   });
   return nodes;
+}
+
+function createNoteSnippet(note?: string, maxLength = 60): string | undefined {
+  if (!note) return undefined;
+  const trimmed = note.trim();
+  if (!trimmed) return undefined;
+  const normalized = trimmed.replace(/\s+/g, " ");
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength)}…`;
+}
+
+function truncateNoteText(note: string, maxLength = 200): string {
+  if (!note) return "";
+  if (note.length <= maxLength) return note;
+  return `${note.slice(0, maxLength)}…`;
 }
 
 function clamp(v: number, min: number, max: number) {
