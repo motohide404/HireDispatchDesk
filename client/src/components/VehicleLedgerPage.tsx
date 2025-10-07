@@ -23,7 +23,6 @@ const vehicleClassLabels: Record<VehicleClass, string> = {
 type VehicleLedgerPageProps = {
   vehicles: VehicleLedgerVehicle[];
   maintenanceRecords: VehicleMaintenanceRecord[];
-  onBackToDispatch?: () => void;
 };
 
 const dateFormatter = new Intl.DateTimeFormat("ja-JP", {
@@ -80,8 +79,7 @@ function formatOdometer(value: number | undefined) {
 
 export default function VehicleLedgerPage({
   vehicles,
-  maintenanceRecords,
-  onBackToDispatch
+  maintenanceRecords
 }: VehicleLedgerPageProps) {
   const maintenanceByVehicle = useMemo(() => {
     const map = new Map<number, VehicleMaintenanceRecord[]>();
@@ -124,15 +122,6 @@ export default function VehicleLedgerPage({
                 車両情報ページで登録した全車両の基本情報と整備履歴を一覧で確認できます。
               </p>
             </div>
-            {onBackToDispatch && (
-              <button
-                type="button"
-                onClick={onBackToDispatch}
-                className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-400 hover:text-slate-800"
-              >
-                配車ボードに戻る
-              </button>
-            )}
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-4">

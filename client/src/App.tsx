@@ -144,7 +144,6 @@ export default function App() {
       <VehicleLedgerPage
         vehicles={vehicleLedger}
         maintenanceRecords={vehicleMaintenanceRecords}
-        onBackToDispatch={() => setActivePage("dispatch")}
       />
     );
   } else {
