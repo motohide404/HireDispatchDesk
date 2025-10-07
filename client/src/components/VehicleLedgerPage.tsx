@@ -23,6 +23,7 @@ const vehicleClassLabels: Record<VehicleClass, string> = {
 type VehicleLedgerPageProps = {
   vehicles: VehicleLedgerVehicle[];
   maintenanceRecords: VehicleMaintenanceRecord[];
+  onBackToDispatch?: () => void;
 };
 
 const dateFormatter = new Intl.DateTimeFormat("ja-JP", {
@@ -79,30 +80,9 @@ function formatOdometer(value: number | undefined) {
 
 export default function VehicleLedgerPage({
   vehicles,
-  maintenanceRecords
+  maintenanceRecords,
+  onBackToDispatch
 }: VehicleLedgerPageProps) {
-  const today = new Date();
-  const currentYear = today.getFullYear();
-  const currentMonth = today.getMonth();
-
-  const shakenExpiryThisMonthCount = vehicles.filter((vehicle) => {
-    const expiry = new Date(vehicle.shakenExpiry);
-    return (
-      !Number.isNaN(expiry.getTime()) &&
-      expiry.getFullYear() === currentYear &&
-      expiry.getMonth() === currentMonth
-    );
-  }).length;
-
-  const maintenanceRecordsThisMonthCount = maintenanceRecords.filter((record) => {
-    const performed = new Date(record.performedAt);
-    return (
-      !Number.isNaN(performed.getTime()) &&
-      performed.getFullYear() === currentYear &&
-      performed.getMonth() === currentMonth
-    );
-  }).length;
-
   const maintenanceByVehicle = useMemo(() => {
     const map = new Map<number, VehicleMaintenanceRecord[]>();
     for (const record of maintenanceRecords) {
@@ -123,12 +103,23 @@ export default function VehicleLedgerPage({
     <div className="min-h-full bg-slate-100 pb-12">
       <div className="mx-auto w-full max-w-6xl px-6 pt-10">
         <div className="flex flex-col gap-4 pb-8">
-          <div className="flex flex-col gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vehicle Ledger</p>
-            <h1 className="text-2xl font-bold text-slate-900">車両台帳</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              車両情報ページで登録した全車両の基本情報と整備履歴を一覧で確認できます。
-            </p>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vehicle Ledger</p>
+              <h1 className="text-2xl font-bold text-slate-900">車両台帳</h1>
+              <p className="mt-1 text-sm text-slate-600">
+                車両情報ページで登録した全車両の基本情報と整備履歴を一覧で確認できます。
+              </p>
+            </div>
+            {onBackToDispatch && (
+              <button
+                type="button"
+                onClick={onBackToDispatch}
+                className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-400 hover:text-slate-800"
+              >
+                配車ボードに戻る
+              </button>
+            )}
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -136,14 +127,26 @@ export default function VehicleLedgerPage({
               <p className="mt-1 text-2xl font-semibold text-slate-900">{vehicles.length} 台</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="text-xs uppercase text-slate-500">今月車検期限の車両</p>
-              <p className="mt-1 text-2xl font-semibold text-amber-600">{shakenExpiryThisMonthCount} 台</p>
+              <p className="text-xs uppercase text-slate-500">本日車検期限の車両</p>
+              <p className="mt-1 text-2xl font-semibold text-amber-600">
+                {
+                  vehicles.filter((vehicle) => {
+                    const expiry = new Date(vehicle.shakenExpiry);
+                    const today = new Date();
+                    return (
+                      !Number.isNaN(expiry.getTime()) &&
+                      expiry.getFullYear() === today.getFullYear() &&
+                      expiry.getMonth() === today.getMonth() &&
+                      expiry.getDate() === today.getDate()
+                    );
+                  }).length
+                }
+                台
+              </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="text-xs uppercase text-slate-500">今月の整備履歴件数</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-900">
-                {maintenanceRecordsThisMonthCount} 件
-              </p>
+              <p className="text-xs uppercase text-slate-500">整備履歴件数</p>
+              <p className="mt-1 text-2xl font-semibold text-slate-900">{maintenanceRecords.length} 件</p>
             </div>
           </div>
         </div>
@@ -192,7 +195,7 @@ export default function VehicleLedgerPage({
                   </div>
                 </div>
 
-                <div className="space-y-6 px-6 py-6">
+                <div className="grid gap-6 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
                   <div className="space-y-4 text-sm text-slate-700">
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
@@ -241,30 +244,30 @@ export default function VehicleLedgerPage({
                       {records.length === 0 ? (
                         <p className="text-xs text-slate-500">整備記録がまだ登録されていません。</p>
                       ) : (
-                        <table className="w-full table-auto text-xs text-slate-600">
+                        <table className="w-full table-fixed text-xs text-slate-600">
                           <thead className="text-[11px] uppercase tracking-wide text-slate-500">
                             <tr className="text-left">
-                              <th className="px-2 pb-2">区分</th>
-                              <th className="px-2 pb-2">実施日</th>
-                              <th className="px-2 pb-2">走行距離</th>
-                              <th className="px-2 pb-2">業者</th>
-                              <th className="px-2 pb-2">内容</th>
-                              <th className="px-2 pb-2">次回予定</th>
+                              <th className="w-[70px] pb-2">区分</th>
+                              <th className="w-[96px] pb-2">実施日</th>
+                              <th className="w-[90px] pb-2">走行距離</th>
+                              <th className="w-[120px] pb-2">業者</th>
+                              <th className="pb-2">内容</th>
+                              <th className="w-[96px] pb-2">次回予定</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200">
                             {records.map((record) => (
                               <tr key={record.id} className="align-top">
-                                <td className="px-2 py-2 font-medium text-slate-700">{record.type}</td>
-                                <td className="px-2 py-2">{formatDate(record.performedAt)}</td>
-                                <td className="px-2 py-2">{formatOdometer(record.odometer)}</td>
-                                <td className="px-2 py-2">
+                                <td className="py-2 font-medium text-slate-700">{record.type}</td>
+                                <td className="py-2">{formatDate(record.performedAt)}</td>
+                                <td className="py-2">{formatOdometer(record.odometer)}</td>
+                                <td className="py-2">
                                   {record.vendorName ?? record.vendorId ?? "-"}
                                 </td>
-                                <td className="px-2 py-2 text-slate-700">
+                                <td className="py-2 text-slate-700">
                                   {record.notes ?? "-"}
                                 </td>
-                                <td className="px-2 py-2">{formatDate(record.nextDueAt)}</td>
+                                <td className="py-2">{formatDate(record.nextDueAt)}</td>
                               </tr>
                             ))}
                           </tbody>
