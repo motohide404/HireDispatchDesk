@@ -30,6 +30,7 @@ const VEHICLE_CLASS_LABELS: Record<string, string> = {
   van: "ワゴン",
   luxury: "ハイグレード"
 };
+const vehicleMap = new Map(VEHICLES.map((v) => [v.id, v]));
 type DriverInfo = {
   id: number;
   name: string;
@@ -66,6 +67,7 @@ type AppDuty = {
   is_overnight: boolean;
   overnight_from_previous_day?: boolean;
   overnight_to_next_day?: boolean;
+  amount?: number;
 };
 
 const APP_DUTIES_INIT: AppDuty[] = [
@@ -78,7 +80,8 @@ const APP_DUTIES_INIT: AppDuty[] = [
     end: "2025-10-03T16:00:00+09:00",
     is_overnight: false,
     overnight_from_previous_day: false,
-    overnight_to_next_day: false
+    overnight_to_next_day: false,
+    amount: 28000
   },
   {
     id: "A2",
@@ -89,7 +92,8 @@ const APP_DUTIES_INIT: AppDuty[] = [
     end: "2025-10-03T09:00:00+09:00",
     is_overnight: false,
     overnight_from_previous_day: false,
-    overnight_to_next_day: false
+    overnight_to_next_day: false,
+    amount: 12000
   },
   {
     id: "A3",
@@ -100,7 +104,8 @@ const APP_DUTIES_INIT: AppDuty[] = [
     end: "2025-10-03T23:30:00+09:00",
     is_overnight: false,
     overnight_from_previous_day: false,
-    overnight_to_next_day: false
+    overnight_to_next_day: false,
+    amount: 21000
   }
 ];
 
@@ -127,6 +132,7 @@ type BoardBooking = {
   is_overnight: boolean;
   overnight_from_previous_day?: boolean;
   overnight_to_next_day?: boolean;
+  amount?: number;
 };
 
 const isAppJob = (booking: BoardBooking | undefined | null) => booking?.client?.type === "app";
@@ -143,7 +149,8 @@ const BOOKINGS: BoardBooking[] = [
     status: "ok",
     is_overnight: false,
     overnight_from_previous_day: false,
-    overnight_to_next_day: false
+    overnight_to_next_day: false,
+    amount: 18000
   },
   {
     id: 202,
@@ -157,7 +164,8 @@ const BOOKINGS: BoardBooking[] = [
     note: "ドライバー未割当",
     is_overnight: false,
     overnight_from_previous_day: false,
-    overnight_to_next_day: false
+    overnight_to_next_day: false,
+    amount: 24000
   },
   {
     id: 203,
@@ -170,7 +178,8 @@ const BOOKINGS: BoardBooking[] = [
     status: "ok",
     is_overnight: false,
     overnight_from_previous_day: false,
-    overnight_to_next_day: false
+    overnight_to_next_day: false,
+    amount: 32000
   },
   {
     id: 205,
@@ -183,7 +192,8 @@ const BOOKINGS: BoardBooking[] = [
     status: "ok",
     is_overnight: true,
     overnight_from_previous_day: false,
-    overnight_to_next_day: true
+    overnight_to_next_day: true,
+    amount: 45000
   },
   {
     id: 204,
@@ -197,7 +207,8 @@ const BOOKINGS: BoardBooking[] = [
     note: "休息不足の恐れ",
     is_overnight: false,
     overnight_from_previous_day: false,
-    overnight_to_next_day: false
+    overnight_to_next_day: false,
+    amount: 38000
   },
   {
     id: 206,
@@ -210,14 +221,53 @@ const BOOKINGS: BoardBooking[] = [
     status: "ok",
     is_overnight: true,
     overnight_from_previous_day: true,
-    overnight_to_next_day: false
+    overnight_to_next_day: false,
+    amount: 41000
   }
 ];
 
-const UNASSIGNED_JOBS = [
-  { id: "J101", title: "ホテル→東京駅", client: { type: "ホテル", name: "パレスホテル" }, start: "2025-10-03T14:00:00+09:00", end: "2025-10-03T15:00:00+09:00", preferClass: "sedan" },
-  { id: "J102", title: "羽田→赤坂", client: { type: "個人", name: "佐藤様" }, start: "2025-10-03T20:30:00+09:00", end: "2025-10-03T21:30:00+09:00", preferClass: "luxury" }
+type UnassignedJob = {
+  id: string;
+  title: string;
+  client: { type: string; name: string };
+  start: string;
+  end: string;
+  preferClass: string;
+  amount?: number;
+};
+
+const UNASSIGNED_JOBS: UnassignedJob[] = [
+  {
+    id: "J101",
+    title: "ホテル→東京駅",
+    client: { type: "ホテル", name: "パレスホテル" },
+    start: "2025-10-03T14:00:00+09:00",
+    end: "2025-10-03T15:00:00+09:00",
+    preferClass: "sedan",
+    amount: 15000
+  },
+  {
+    id: "J102",
+    title: "羽田→赤坂",
+    client: { type: "個人", name: "佐藤様" },
+    start: "2025-10-03T20:30:00+09:00",
+    end: "2025-10-03T21:30:00+09:00",
+    preferClass: "luxury",
+    amount: 25000
+  }
 ];
+
+type DailyJobRow = {
+  id: string;
+  name: string;
+  timeLabel: string;
+  vehicleName: string;
+  driverName: string;
+  amount?: number;
+  source: "booking" | "duty" | "pool";
+  sourceLabel: string;
+  sortKey: number;
+};
 
 type CurrentTimePosition = { visible: boolean; x: number };
 
@@ -439,7 +489,7 @@ export default function VehicleDispatchBoardMock() {
   const [selected, setSelected] = useState<{ type: "booking" | "duty"; id: number | string } | null>(null);
   const [bookings, setBookings] = useState<BoardBooking[]>(BOOKINGS);
   const [appDuties, setAppDuties] = useState<AppDuty[]>(APP_DUTIES_INIT);
-  const [jobPool, setJobPool] = useState(UNASSIGNED_JOBS);
+  const [jobPool, setJobPool] = useState<UnassignedJob[]>(UNASSIGNED_JOBS);
   const [jobFormOpen, setJobFormOpen] = useState(false);
   const [jobDraft, setJobDraft] = useState({
     title: "",
@@ -450,6 +500,7 @@ export default function VehicleDispatchBoardMock() {
     preferClass: "sedan"
   });
   const [flashUnassignId, setFlashUnassignId] = useState<number | null>(null);
+  const [showJobAmounts, setShowJobAmounts] = useState(true);
   const bookingIdRef = useRef(500);
   const attachmentUrlsRef = useRef<Map<string, string>>(new Map());
   const centerRef = useRef<HTMLDivElement | null>(null);
@@ -559,6 +610,72 @@ export default function VehicleDispatchBoardMock() {
       };
     });
   }, [appDuties, bookings, viewDateObj]);
+  const dailyJobRows = useMemo(() => {
+    const dayStart = viewDateObj.getTime();
+    if (!Number.isFinite(dayStart)) {
+      return [] as DailyJobRow[];
+    }
+    const dayEnd = dayStart + DAY_MS;
+    const rows: DailyJobRow[] = [];
+
+    bookings.forEach((booking) => {
+      const clipped = clipIntervalToDay(booking.start, booking.end, dayStart, dayEnd);
+      if (!clipped) return;
+      const vehicleName = vehicleMap.get(booking.vehicleId)?.name ?? "未割当";
+      const driverName =
+        booking.driverId != null ? driverMap.get(booking.driverId)?.name ?? "未割当" : "未割当";
+      rows.push({
+        id: `booking-${booking.id}`,
+        name: booking.title,
+        timeLabel: `${formatTimeInJst(clipped.start)}〜${formatTimeInJst(clipped.end)}`,
+        vehicleName,
+        driverName,
+        amount: booking.amount,
+        source: "booking",
+        sourceLabel: "予約",
+        sortKey: clipped.start
+      });
+    });
+
+    appDuties.forEach((duty) => {
+      const clipped = clipIntervalToDay(duty.start, duty.end, dayStart, dayEnd);
+      if (!clipped) return;
+      const vehicleName = vehicleMap.get(duty.vehicleId)?.name ?? "未割当";
+      const driverName = duty.driverId != null ? driverMap.get(duty.driverId)?.name ?? "未割当" : "未割当";
+      rows.push({
+        id: `duty-${duty.id}`,
+        name: `${duty.service}（アプリ）`,
+        timeLabel: `${formatTimeInJst(clipped.start)}〜${formatTimeInJst(clipped.end)}`,
+        vehicleName,
+        driverName,
+        amount: duty.amount,
+        source: "duty",
+        sourceLabel: "アプリ",
+        sortKey: clipped.start
+      });
+    });
+
+    jobPool.forEach((job) => {
+      const clipped = clipIntervalToDay(job.start, job.end, dayStart, dayEnd);
+      if (!clipped) return;
+      const vehicleName = job.preferClass
+        ? `${VEHICLE_CLASS_LABELS[job.preferClass] ?? job.preferClass}希望`
+        : "未割当";
+      rows.push({
+        id: `pool-${job.id}`,
+        name: `${job.title}（未割当）`,
+        timeLabel: `${formatTimeInJst(clipped.start)}〜${formatTimeInJst(clipped.end)}`,
+        vehicleName,
+        driverName: "割当待ち",
+        amount: job.amount,
+        source: "pool",
+        sourceLabel: "ジョブプール",
+        sortKey: clipped.start
+      });
+    });
+
+    return rows.sort((a, b) => a.sortKey - b.sortKey);
+  }, [appDuties, bookings, jobPool, viewDateObj]);
   const totalMonthlyJobs = useMemo(
     () => DRIVERS.reduce((acc, driver) => acc + driver.monthlyJobs, 0),
     []
@@ -1479,6 +1596,77 @@ export default function VehicleDispatchBoardMock() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          </section>
+
+          <section id="job-summary" className="scroll-mt-24">
+            <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 px-5 py-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-800">ジョブタイムライン</h2>
+                  <p className="text-xs text-slate-500">{viewDateDisplay} のジョブカード一覧</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
+                  <div>本日のジョブ {dailyJobRows.length} 件</div>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-slate-800 focus:ring-slate-500"
+                      checked={showJobAmounts}
+                      onChange={(event) => setShowJobAmounts(event.target.checked)}
+                    />
+                    <span>金額を表示（管理者）</span>
+                  </label>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th scope="col" className="px-5 py-3 font-semibold">ジョブ</th>
+                      <th scope="col" className="px-5 py-3 font-semibold">開始時間</th>
+                      <th scope="col" className="px-5 py-3 font-semibold">車両</th>
+                      <th scope="col" className="px-5 py-3 font-semibold">ドライバー</th>
+                      {showJobAmounts && (
+                        <th scope="col" className="px-5 py-3 text-right font-semibold">金額</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                    {dailyJobRows.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={showJobAmounts ? 5 : 4}
+                          className="px-5 py-6 text-center text-sm text-slate-500"
+                        >
+                          本日のジョブはありません。
+                        </td>
+                      </tr>
+                    ) : (
+                      dailyJobRows.map((row) => (
+                        <tr key={row.id} className="transition-colors hover:bg-slate-50/70">
+                          <td className="px-5 py-3 align-top">
+                            <div className="flex flex-col gap-1">
+                              <span className="font-medium text-slate-800">{row.name}</span>
+                              <span className="w-fit rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                                {row.sourceLabel}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3 align-top text-slate-600">{row.timeLabel}</td>
+                          <td className="px-5 py-3 align-top text-slate-600">{row.vehicleName}</td>
+                          <td className="px-5 py-3 align-top text-slate-600">{row.driverName}</td>
+                          {showJobAmounts && (
+                            <td className="px-5 py-3 align-top text-right text-slate-600">
+                              {row.amount != null ? formatCurrency(row.amount) : "—"}
+                            </td>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </section>
@@ -2805,6 +2993,9 @@ function formatMinutesLabel(minutes: number) {
   if (hours === 0) return `${mins}分`;
   if (mins === 0) return `${hours}時間`;
   return `${hours}時間${mins}分`;
+}
+function formatCurrency(amount: number) {
+  return `¥${amount.toLocaleString("ja-JP")}`;
 }
 function formatTimeInJst(ms: number) {
   const d = new Date(ms);
