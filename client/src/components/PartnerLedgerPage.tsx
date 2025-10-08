@@ -12,24 +12,6 @@ interface PartnerEntry {
   contacts: PartnerContact[];
 }
 
-const formatAddressLines = (
-  postalCode: string,
-  prefecture: string,
-  city: string,
-  addressLine1: string,
-  addressLine2?: string
-) => {
-  const lines = [postalCode ? `〒${postalCode}` : undefined];
-  const address = [prefecture, city, addressLine1].filter(Boolean).join("");
-  if (address) {
-    lines.push(address);
-  }
-  if (addressLine2) {
-    lines.push(addressLine2);
-  }
-  return lines.filter((line): line is string => Boolean(line));
-};
-
 const renderMultiline = (value?: string) => {
   if (!value) {
     return <span className="text-slate-400">-</span>;
@@ -120,15 +102,9 @@ export default function PartnerLedgerPage() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900"
-            >
-              拠点を追加
-            </button>
-            <button
-              type="button"
               className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-slate-800"
             >
-              担当者を追加
+              取引先を追加
             </button>
           </div>
         </div>
@@ -165,13 +141,13 @@ export default function PartnerLedgerPage() {
           </div>
         ) : (
           filteredEntries.map(({ partner, offices, contacts }) => {
-            const partnerAddress = formatAddressLines(
-              partner.postalCode,
+            const partnerAddress = [
               partner.prefecture,
               partner.city,
-              partner.addressLine1,
-              partner.addressLine2
-            );
+              partner.addressLine1
+            ]
+              .filter(Boolean)
+              .join("");
 
             return (
               <section
@@ -239,12 +215,38 @@ export default function PartnerLedgerPage() {
                       </div>
                       <div>
                         <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                          郵便番号・住所
+                          郵便番号
                         </dt>
                         <dd className="mt-1 text-sm text-slate-900">
-                          {partnerAddress.map((line) => (
-                            <div key={line}>{line}</div>
-                          ))}
+                          {partner.postalCode ? (
+                            `〒${partner.postalCode}`
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                          住所
+                        </dt>
+                        <dd className="mt-1 text-sm text-slate-900">
+                          {partnerAddress ? (
+                            partnerAddress
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                          建物名
+                        </dt>
+                        <dd className="mt-1 text-sm text-slate-900">
+                          {partner.addressLine2 ? (
+                            partner.addressLine2
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
                         </dd>
                       </div>
                       <div>
@@ -252,6 +254,18 @@ export default function PartnerLedgerPage() {
                           代表電話
                         </dt>
                         <dd className="mt-1 text-sm text-slate-900">{partner.phone}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                          FAX
+                        </dt>
+                        <dd className="mt-1 text-sm text-slate-900">
+                          {partner.fax ? (
+                            partner.fax
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </dd>
                       </div>
                       <div>
                         <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -276,6 +290,15 @@ export default function PartnerLedgerPage() {
                     </dl>
                   </div>
 
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900"
+                    >
+                      拠点を追加
+                    </button>
+                  </div>
+
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-semibold tracking-wide text-slate-500">
@@ -290,13 +313,13 @@ export default function PartnerLedgerPage() {
                     ) : (
                       <div className="grid gap-4 sm:grid-cols-2">
                         {offices.map((office) => {
-                          const officeAddress = formatAddressLines(
-                            office.postalCode,
+                          const officeAddress = [
                             office.prefecture,
                             office.city,
-                            office.addressLine1,
-                            office.addressLine2
-                          );
+                            office.addressLine1
+                          ]
+                            .filter(Boolean)
+                            .join("");
                           return (
                             <div
                               key={office.id}
@@ -316,11 +339,35 @@ export default function PartnerLedgerPage() {
                               <dl className="grid gap-y-3 text-sm">
                                 <div>
                                   <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                    郵便番号・住所
+                                    郵便番号
                                   </dt>
                                   <dd className="mt-1 text-slate-900">
-                                    {officeAddress.length > 0 ? (
-                                      officeAddress.map((line) => <div key={line}>{line}</div>)
+                                    {office.postalCode ? (
+                                      `〒${office.postalCode}`
+                                    ) : (
+                                      <span className="text-slate-400">-</span>
+                                    )}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                    住所
+                                  </dt>
+                                  <dd className="mt-1 text-slate-900">
+                                    {officeAddress ? (
+                                      officeAddress
+                                    ) : (
+                                      <span className="text-slate-400">-</span>
+                                    )}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                    建物名
+                                  </dt>
+                                  <dd className="mt-1 text-slate-900">
+                                    {office.addressLine2 ? (
+                                      office.addressLine2
                                     ) : (
                                       <span className="text-slate-400">-</span>
                                     )}

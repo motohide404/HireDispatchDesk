@@ -14,6 +14,7 @@ export interface PartnerRecord {
   addressLine1: string;
   addressLine2?: string;
   phone: string;
+  fax?: string;
   email: string;
   emergencyContact?: string;
   notes?: string;
@@ -79,6 +80,7 @@ export const partnerLedger: PartnerLedgerData = {
       addressLine1: "1-1-1",
       addressLine2: "麹町ビル5F",
       phone: "03-1234-5678",
+      fax: "03-1234-5679",
       email: "booking@sunrise-tours.jp",
       emergencyContact: "050-1234-0000",
       notes: "VIP顧客多数。請求は月末締め翌月末払い。"
@@ -97,6 +99,7 @@ export const partnerLedger: PartnerLedgerData = {
       addressLine1: "2-4-9",
       addressLine2: "梅田スクエアタワー18F",
       phone: "06-9876-5432",
+      fax: "06-9876-5433",
       email: "operations@globe-link.co.jp",
       emergencyContact: "080-2222-4444",
       notes: "シャトル運行の繁忙期は臨時便あり。支払サイト45日。"
