@@ -36,7 +36,18 @@ export const mockDrivers: Driver[] = [
   { id: "driver-1", name: "Alex Johnson", status: "available" },
   { id: "driver-2", name: "Robin Singh", status: "assigned", assignedReservationId: "reservation-1" },
   { id: "driver-3", name: "Jamie Chen", status: "available" },
-  { id: "driver-4", name: "Morgan Lee", status: "assigned", assignedReservationId: "reservation-2" }
+  { id: "driver-4", name: "Morgan Lee", status: "assigned", assignedReservationId: "reservation-2" },
+  { id: "driver-5", name: "Haruto Tanaka", status: "available" },
+  { id: "driver-6", name: "Sara Nakamura", status: "available" },
+  { id: "driver-7", name: "Diego Martinez", status: "available" },
+  { id: "driver-8", name: "Priya Patel", status: "available" },
+  { id: "driver-9", name: "Noah Williams", status: "available" },
+  { id: "driver-10", name: "Lina Müller", status: "available" },
+  { id: "driver-11", name: "Marcus Brown", status: "available" },
+  { id: "driver-12", name: "Yuki Sato", status: "available" },
+  { id: "driver-13", name: "Sofia Rossi", status: "available" },
+  { id: "driver-14", name: "Hana Kim", status: "available" },
+  { id: "driver-15", name: "Ethan Clarke", status: "available" }
 ];
 
 export const mockJobs: Job[] = [
