@@ -141,7 +141,6 @@ export default function App() {
       <VehicleDispatchBoardMock
         drivers={activeDriversForBoard}
         vehicles={dispatchVehicles}
-        onOpenVehicleLedger={() => setActivePage("vehicles")}
         onOpenDriverLedger={() => setActivePage("drivers")}
       />
     );
@@ -172,10 +171,7 @@ export default function App() {
       <header className="border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Hire Dispatch Desk</p>
-            <h1 className="text-xl font-bold text-slate-900">
-              {NAV_ITEMS.find((item) => item.key === activePage)?.label ?? ""}
-            </h1>
+            <h1 className="text-2xl font-bold uppercase tracking-wide text-slate-900">HIRE DISPATCH DESK</h1>
             <p className="text-xs text-slate-500">{activeDescription}</p>
           </div>
           <nav className="flex flex-wrap gap-2">
