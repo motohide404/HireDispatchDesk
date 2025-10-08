@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type {
   VehicleClass,
   VehicleLedgerVehicle,
@@ -11,6 +11,46 @@ const supportLabels: { key: keyof VehicleLedgerVehicle["appsSupported"]; label: 
   { key: "diDi", label: "DiDi" },
   { key: "nearMe", label: "nearMe" }
 ];
+
+type ModalProps = {
+  title: string;
+  description?: string;
+  onClose: () => void;
+  children: ReactNode;
+};
+
+function Modal({ title, description, onClose, children }: ModalProps) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={onClose}
+    >
+      <div
+        className="relative w-full max-w-5xl rounded-3xl bg-white p-6 shadow-2xl"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-xl font-semibold text-slate-900">{title}</h3>
+            {description ? (
+              <p className="mt-1 text-sm text-slate-500">{description}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center rounded-full border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-400 hover:text-slate-900"
+          >
+            閉じる
+          </button>
+        </div>
+        <div className="mt-6">{children}</div>
+      </div>
+    </div>
+  );
+}
 
 const vehicleClassLabels: Record<VehicleClass, string> = {
   sedan: "セダン",
@@ -81,6 +121,8 @@ export default function VehicleLedgerPage({
   vehicles,
   maintenanceRecords
 }: VehicleLedgerPageProps) {
+  const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
+
   const maintenanceByVehicle = useMemo(() => {
     const map = new Map<number, VehicleMaintenanceRecord[]>();
     for (const record of maintenanceRecords) {
@@ -109,6 +151,21 @@ export default function VehicleLedgerPage({
       return expiry.getFullYear() === targetYear && expiry.getMonth() === targetMonth;
     }).length;
   }, [vehicles]);
+
+  const selectedVehicle = useMemo(() => {
+    if (selectedVehicleId == null) {
+      return null;
+    }
+    return vehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null;
+  }, [selectedVehicleId, vehicles]);
+
+  const selectedRecords = selectedVehicle
+    ? maintenanceByVehicle.get(selectedVehicle.id) ?? []
+    : [];
+  const selectedSummary = selectedVehicle ? expiryStatus(selectedVehicle.shakenExpiry) : null;
+  const selectedInspection = selectedVehicle
+    ? expiryStatus(selectedVehicle.inspection3mExpiry)
+    : null;
 
   return (
     <div className="min-h-full bg-slate-100 pb-12">
@@ -141,138 +198,213 @@ export default function VehicleLedgerPage({
           </div>
         </div>
 
-        <div className="space-y-6">
-          {vehicles.map((vehicle) => {
-            const summary = expiryStatus(vehicle.shakenExpiry);
-            const inspection = expiryStatus(vehicle.inspection3mExpiry);
-            const records = maintenanceByVehicle.get(vehicle.id) ?? [];
+        <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm text-slate-700">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th scope="col" className="px-4 py-3 text-left font-semibold">
+                    管理ID
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-left font-semibold">
+                    車両名 / VIN
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-left font-semibold">
+                    車両情報
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-left font-semibold">
+                    営業所
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-left font-semibold">
+                    車検満了日
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-left font-semibold">
+                    3ヶ月点検期限
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right font-semibold">
+                    整備履歴
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {vehicles.map((vehicle) => {
+                  const summary = expiryStatus(vehicle.shakenExpiry);
+                  const inspection = expiryStatus(vehicle.inspection3mExpiry);
+                  const records = maintenanceByVehicle.get(vehicle.id) ?? [];
 
-            return (
-              <section
-                key={vehicle.id}
-                className="rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
-              >
-                <div className="border-b border-slate-100 px-6 py-5">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">{vehicle.vehiclesId}</p>
-                      <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                        <h2 className="text-xl font-semibold text-slate-900">{vehicle.name}</h2>
-                        <span className="text-sm text-slate-600">{vehicle.plateNo}</span>
-                        <span className="text-xs text-slate-500">VIN: {vehicle.vin}</span>
-                      </div>
-                      <p className="mt-2 text-sm text-slate-600">
-                        所属営業所: <span className="font-medium text-slate-800">{vehicle.officeId}</span>
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {supportLabels.map(({ key, label }) => {
-                        const active = vehicle.appsSupported[key];
-                        return (
-                          <span
-                            key={key}
-                            className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
-                              active
-                                ? "border-sky-300 bg-sky-50 text-sky-700"
-                                : "border-slate-200 bg-slate-100 text-slate-400"
-                            }`}
-                          >
-                            {label}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-6 px-6 py-6">
-                  <div className="space-y-4 text-sm text-slate-700">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">車両区分</p>
-                        <p className="mt-1 text-base font-medium text-slate-800">
-                          {vehicleClassLabels[vehicle.class] ?? vehicle.class}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">乗車定員</p>
-                        <p className="mt-1 text-base font-medium text-slate-800">{vehicle.seats} 名</p>
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">保有区分</p>
-                        <p className="mt-1 text-base font-medium text-slate-800">{vehicle.ownerType}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">点検メモ</p>
-                        <p className="mt-1 text-base text-slate-700">
-                          {vehicle.maintenanceNotes ?? "メモなし"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">車検満了日</p>
-                        <span className={`mt-1 inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-semibold ${summary.className}`}>
+                  return (
+                    <tr
+                      key={vehicle.id}
+                      onClick={() => setSelectedVehicleId(vehicle.id)}
+                      className="cursor-pointer bg-white transition hover:bg-sky-50"
+                    >
+                      <td className="px-4 py-3 font-medium text-slate-900">{vehicle.vehiclesId}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-slate-900">{vehicle.name}</div>
+                        <div className="text-xs text-slate-500">VIN: {vehicle.vin}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-sm text-slate-700">{vehicle.plateNo}</div>
+                        <div className="text-xs text-slate-500">
+                          {vehicleClassLabels[vehicle.class] ?? vehicle.class} / {vehicle.seats}名
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700">{vehicle.officeId}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${summary.className}`}
+                        >
                           {summary.label}
                         </span>
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-500">3ヶ月点検期限</p>
-                        <span className={`mt-1 inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-semibold ${inspection.className}`}>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${inspection.className}`}
+                        >
                           {inspection.label}
                         </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-slate-800">整備履歴</h3>
-                      <span className="text-xs text-slate-500">{records.length} 件</span>
-                    </div>
-                    <div className="mt-3 space-y-3">
-                      {records.length === 0 ? (
-                        <p className="text-xs text-slate-500">整備記録がまだ登録されていません。</p>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full table-auto text-xs text-slate-600">
-                            <thead className="text-[11px] uppercase tracking-wide text-slate-500">
-                              <tr className="text-left">
-                                <th className="w-[70px] pb-2">区分</th>
-                                <th className="w-[96px] pb-2">実施日</th>
-                                <th className="w-[90px] pb-2">走行距離</th>
-                                <th className="w-[140px] pb-2">業者</th>
-                                <th className="pb-2">内容</th>
-                                <th className="w-[120px] pb-2">次回予定</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200">
-                              {records.map((record) => (
-                                <tr key={record.id} className="align-top">
-                                  <td className="py-2 font-medium text-slate-700">{record.type}</td>
-                                  <td className="py-2">{formatDate(record.performedAt)}</td>
-                                  <td className="py-2">{formatOdometer(record.odometer)}</td>
-                                  <td className="py-2">
-                                    {record.vendorName ?? record.vendorId ?? "-"}
-                                  </td>
-                                  <td className="py-2 text-slate-700">
-                                    {record.notes ?? "-"}
-                                  </td>
-                                  <td className="py-2">{formatDate(record.nextDueAt)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </section>
-            );
-          })}
+                      </td>
+                      <td className="px-4 py-3 text-right text-xs text-slate-500">
+                        {records.length} 件
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
+
+      {selectedVehicle ? (
+        <Modal
+          title={`${selectedVehicle.name}`}
+          description={`${selectedVehicle.plateNo} ・ ${selectedVehicle.vehiclesId}`}
+          onClose={() => setSelectedVehicleId(null)}
+        >
+          <div className="space-y-6 text-sm text-slate-700">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">所属営業所</p>
+                <p className="mt-1 text-base font-medium text-slate-800">{selectedVehicle.officeId}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">車両区分</p>
+                <p className="mt-1 text-base font-medium text-slate-800">
+                  {vehicleClassLabels[selectedVehicle.class] ?? selectedVehicle.class}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">乗車定員</p>
+                <p className="mt-1 text-base font-medium text-slate-800">{selectedVehicle.seats} 名</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">有区分</p>
+                <p className="mt-1 text-base font-medium text-slate-800">{selectedVehicle.ownerType}</p>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">対応アプリ</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {supportLabels.map(({ key, label }) => {
+                  const active = selectedVehicle.appsSupported[key];
+                  return (
+                    <span
+                      key={key}
+                      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                        active
+                          ? "border-sky-300 bg-sky-50 text-sky-700"
+                          : "border-slate-200 bg-slate-100 text-slate-400"
+                      }`}
+                    >
+                      {label}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">車検満了日</p>
+                {selectedSummary ? (
+                  <span
+                    className={`mt-1 inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-semibold ${selectedSummary.className}`}
+                  >
+                    {selectedSummary.label}
+                  </span>
+                ) : (
+                  <span className="mt-1 inline-flex w-fit items-center rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-500">
+                    未設定
+                  </span>
+                )}
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">3ヶ月点検期限</p>
+                {selectedInspection ? (
+                  <span
+                    className={`mt-1 inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-semibold ${selectedInspection.className}`}
+                  >
+                    {selectedInspection.label}
+                  </span>
+                ) : (
+                  <span className="mt-1 inline-flex w-fit items-center rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-500">
+                    未設定
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">点検メモ</p>
+              <p className="mt-1 whitespace-pre-wrap text-base text-slate-700">
+                {selectedVehicle.maintenanceNotes ?? "メモなし"}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-800">整備履歴</h3>
+                <span className="text-xs text-slate-500">{selectedRecords.length} 件</span>
+              </div>
+              <div className="mt-3 space-y-3">
+                {selectedRecords.length === 0 ? (
+                  <p className="text-xs text-slate-500">整備記録がまだ登録されていません。</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full table-auto text-xs text-slate-600">
+                      <thead className="text-[11px] uppercase tracking-wide text-slate-500">
+                        <tr className="text-left">
+                          <th className="w-[70px] pb-2">区分</th>
+                          <th className="w-[96px] pb-2">実施日</th>
+                          <th className="w-[90px] pb-2">走行距離</th>
+                          <th className="w-[140px] pb-2">業者</th>
+                          <th className="pb-2">内容</th>
+                          <th className="w-[120px] pb-2">次回予定</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {selectedRecords.map((record) => (
+                          <tr key={record.id} className="align-top">
+                            <td className="py-2 font-medium text-slate-700">{record.type}</td>
+                            <td className="py-2">{formatDate(record.performedAt)}</td>
+                            <td className="py-2">{formatOdometer(record.odometer)}</td>
+                            <td className="py-2">{record.vendorName ?? record.vendorId ?? "-"}</td>
+                            <td className="py-2 text-slate-700">{record.notes ?? "-"}</td>
+                            <td className="py-2">{formatDate(record.nextDueAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }
+
