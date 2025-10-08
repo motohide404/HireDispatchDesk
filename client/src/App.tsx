@@ -198,6 +198,13 @@ export default function App() {
       <main className="flex-1">
         {pageContent}
       </main>
+      <footer className="border-t border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+        <div className="mx-auto w-full max-w-6xl px-6 py-6">
+          <p className="text-center text-sm font-semibold tracking-wide text-slate-600">
+            ハイヤーディスパッチデスク
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }
