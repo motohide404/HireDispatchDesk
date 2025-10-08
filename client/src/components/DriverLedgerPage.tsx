@@ -233,6 +233,13 @@ export default function DriverLedgerPage({
     setIsNewDriverModalOpen(false);
   };
 
+  const handleArchiveSelectedDriver = () => {
+    if (!selectedDriver) return;
+    const confirmed = window.confirm(`${selectedDriver.name}さんの情報をアーカイブしますか？`);
+    if (!confirmed) return;
+    onArchiveDriver(selectedDriver.id);
+  };
+
   const handleAddDocument = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedDriver) return;
@@ -707,7 +714,7 @@ export default function DriverLedgerPage({
                 {selectedDriver.status === "active" ? (
                   <button
                     type="button"
-                    onClick={() => onArchiveDriver(selectedDriver.id)}
+                    onClick={handleArchiveSelectedDriver}
                     className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-rose-400 hover:text-rose-600"
                   >
                     アーカイブ
