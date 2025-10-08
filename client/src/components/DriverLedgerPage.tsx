@@ -238,7 +238,6 @@ export default function DriverLedgerPage({
     const confirmed = window.confirm(`${selectedDriver.name}さんの情報をアーカイブしますか？`);
     if (!confirmed) return;
     onArchiveDriver(selectedDriver.id);
-    setIsDetailOpen(false);
   };
 
   const handleAddDocument = (event: FormEvent<HTMLFormElement>) => {
