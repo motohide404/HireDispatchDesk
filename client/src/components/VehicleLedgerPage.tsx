@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import type {
   VehicleClass,
   VehicleLedgerVehicle,
@@ -65,6 +65,30 @@ type VehicleLedgerPageProps = {
   maintenanceRecords: VehicleMaintenanceRecord[];
 };
 
+type NewVehicleFormState = {
+  name: string;
+  vehiclesId: string;
+  officeId: string;
+  class: VehicleClass;
+  seats: string;
+  vin: string;
+  plateNo: string;
+  shakenExpiry: string;
+  inspection3mExpiry: string;
+};
+
+const createEmptyVehicleForm = (): NewVehicleFormState => ({
+  name: "",
+  vehiclesId: "",
+  officeId: "",
+  class: "sedan",
+  seats: "",
+  vin: "",
+  plateNo: "",
+  shakenExpiry: "",
+  inspection3mExpiry: ""
+});
+
 const dateFormatter = new Intl.DateTimeFormat("ja-JP", {
   year: "numeric",
   month: "2-digit",
@@ -122,6 +146,33 @@ export default function VehicleLedgerPage({
   maintenanceRecords
 }: VehicleLedgerPageProps) {
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newVehicleForm, setNewVehicleForm] = useState<NewVehicleFormState>(createEmptyVehicleForm);
+
+  const handleNewVehicleChange = (
+    event: ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = event.target;
+    setNewVehicleForm((prev) => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const resetNewVehicleForm = () => {
+    setNewVehicleForm(createEmptyVehicleForm());
+  };
+
+  const handleCloseCreateModal = () => {
+    setIsCreateModalOpen(false);
+    resetNewVehicleForm();
+  };
+
+  const handleCreateVehicleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    console.log("New vehicle", newVehicleForm);
+    handleCloseCreateModal();
+  };
 
   const maintenanceByVehicle = useMemo(() => {
     const map = new Map<number, VehicleMaintenanceRecord[]>();
@@ -171,13 +222,26 @@ export default function VehicleLedgerPage({
     <div className="min-h-full bg-slate-100 pb-12">
       <div className="mx-auto w-full max-w-6xl px-6 pt-10">
         <div className="flex flex-col gap-4 pb-8">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vehicle Ledger</p>
               <h1 className="text-2xl font-bold text-slate-900">車両台帳</h1>
               <p className="mt-1 text-sm text-slate-600">
                 車両情報ページで登録した全車両の基本情報と整備履歴を一覧で確認できます。
               </p>
+            </div>
+            <div className="flex items-center gap-3 self-start md:self-center">
+              <button
+                type="button"
+                onClick={() => {
+                  resetNewVehicleForm();
+                  setIsCreateModalOpen(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-500"
+              >
+                <span aria-hidden>＋</span>
+                車両を追加
+              </button>
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
@@ -402,6 +466,133 @@ export default function VehicleLedgerPage({
               </div>
             </div>
           </div>
+        </Modal>
+      ) : null}
+
+      {isCreateModalOpen ? (
+        <Modal
+          title="車両を追加"
+          description="新しい車両の基本情報を入力してください。"
+          onClose={handleCloseCreateModal}
+        >
+          <form className="space-y-6" onSubmit={handleCreateVehicleSubmit}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-sm text-slate-700">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">車両名</span>
+                <input
+                  name="name"
+                  value={newVehicleForm.name}
+                  onChange={handleNewVehicleChange}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  placeholder="例：アルファード"
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-slate-700">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">管理ID</span>
+                <input
+                  name="vehiclesId"
+                  value={newVehicleForm.vehiclesId}
+                  onChange={handleNewVehicleChange}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  placeholder="例：VH-1001"
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-slate-700">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">所属営業所</span>
+                <input
+                  name="officeId"
+                  value={newVehicleForm.officeId}
+                  onChange={handleNewVehicleChange}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  placeholder="例：新宿"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-slate-700">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">車両区分</span>
+                <select
+                  name="class"
+                  value={newVehicleForm.class}
+                  onChange={handleNewVehicleChange}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                >
+                  {Object.entries(vehicleClassLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-slate-700">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">乗車定員</span>
+                <input
+                  name="seats"
+                  value={newVehicleForm.seats}
+                  onChange={handleNewVehicleChange}
+                  type="number"
+                  min="1"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  placeholder="例：7"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-slate-700">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">VIN</span>
+                <input
+                  name="vin"
+                  value={newVehicleForm.vin}
+                  onChange={handleNewVehicleChange}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  placeholder="17桁の英数字"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-slate-700">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">ナンバー</span>
+                <input
+                  name="plateNo"
+                  value={newVehicleForm.plateNo}
+                  onChange={handleNewVehicleChange}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  placeholder="例：新宿 300 あ 12-34"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-slate-700">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">車検満了日</span>
+                <input
+                  name="shakenExpiry"
+                  value={newVehicleForm.shakenExpiry}
+                  onChange={handleNewVehicleChange}
+                  type="date"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm text-slate-700">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">3ヶ月点検期限</span>
+                <input
+                  name="inspection3mExpiry"
+                  value={newVehicleForm.inspection3mExpiry}
+                  onChange={handleNewVehicleChange}
+                  type="date"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                />
+              </label>
+            </div>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCloseCreateModal}
+                className="inline-flex items-center rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-slate-400 hover:text-slate-900"
+              >
+                キャンセル
+              </button>
+              <button
+                type="submit"
+                className="inline-flex items-center rounded-full bg-sky-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-500"
+              >
+                保存する
+              </button>
+            </div>
+          </form>
         </Modal>
       ) : null}
     </div>
