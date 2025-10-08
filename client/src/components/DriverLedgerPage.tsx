@@ -113,6 +113,7 @@ export default function DriverLedgerPage({
     uploadedAt: ""
   });
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isNewDriverModalOpen, setIsNewDriverModalOpen] = useState(false);
 
   useEffect(() => {
     if (!selectedId) {
@@ -130,6 +131,15 @@ export default function DriverLedgerPage({
   useEffect(() => {
     setDocumentForm({ name: "", type: "resume", uri: "", uploadedAt: "" });
   }, [selectedId]);
+
+  const handleOpenNewDriverModal = () => {
+    setIsNewDriverModalOpen(true);
+  };
+
+  const handleCloseNewDriverModal = () => {
+    setIsNewDriverModalOpen(false);
+    setNewDriverForm(emptyNewDriverForm);
+  };
 
   const filteredDrivers = useMemo(() => {
     const normalized = search.trim().toLowerCase();
@@ -220,6 +230,7 @@ export default function DriverLedgerPage({
     });
     setNewDriverForm(emptyNewDriverForm);
     setSearch("");
+    setIsNewDriverModalOpen(false);
   };
 
   const handleAddDocument = (event: FormEvent<HTMLFormElement>) => {
@@ -247,7 +258,14 @@ export default function DriverLedgerPage({
                 ドライバーの基本情報・免許・点呼記録・資料を一元管理し、配車ボードと連携します。
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleOpenNewDriverModal}
+                className="inline-flex items-center justify-center rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
+              >
+                新規ドライバーを登録
+              </button>
               {onBackToDispatch && (
                 <button
                   type="button"
@@ -275,7 +293,7 @@ export default function DriverLedgerPage({
           </div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="grid gap-6">
           <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-5 py-4">
               <div className="flex flex-col gap-2">
@@ -345,13 +363,38 @@ export default function DriverLedgerPage({
           </ul>
         </section>
 
-          <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 px-6 py-5">
-              <h2 className="text-lg font-semibold text-slate-800">新規ドライバー登録</h2>
-              <p className="text-xs text-slate-500">基本情報と免許・健康情報を入力し、ドライバープールへ追加します。</p>
+        </div>
+      </div>
+      {isNewDriverModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="新規ドライバー登録"
+          onClick={handleCloseNewDriverModal}
+        >
+          <div
+            className="relative flex h-full max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-800">新規ドライバー登録</h2>
+                <p className="text-xs text-slate-500">
+                  基本情報と免許・健康情報を入力し、ドライバープールへ追加します。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseNewDriverModal}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                aria-label="閉じる"
+              >
+                ×
+              </button>
             </div>
-            <form className="max-h-[720px] space-y-4 overflow-auto px-6 py-6" onSubmit={handleSubmitNewDriver}>
-              <div className="grid gap-3">
+            <form className="flex-1 overflow-y-auto px-6 py-6" onSubmit={handleSubmitNewDriver}>
+              <div className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="new-code">
@@ -534,19 +577,20 @@ export default function DriverLedgerPage({
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="new-medical-notes">
-                    健康メモ
+                    健康診断メモ
                   </label>
                   <textarea
                     id="new-medical-notes"
                     value={newDriverForm.medicalNotes}
                     onChange={(e) => handleNewDriverChange("medicalNotes", e.target.value)}
-                    className="h-20 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    rows={2}
                   />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="new-alcohol-method">
-                      点呼（アルコール）方法
+                      アルコールチェック方法
                     </label>
                     <input
                       id="new-alcohol-method"
@@ -554,12 +598,11 @@ export default function DriverLedgerPage({
                       value={newDriverForm.alcoholCheckMethod}
                       onChange={(e) => handleNewDriverChange("alcoholCheckMethod", e.target.value)}
                       className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                      placeholder="例）アルコールチェッカー"
                     />
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="new-alcohol-date">
-                      最終点呼日
+                      最終アルコールチェック日
                     </label>
                     <input
                       id="new-alcohol-date"
@@ -572,11 +615,11 @@ export default function DriverLedgerPage({
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="new-ext-usage">
-                      当月拡張使用回数
+                    <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="new-ext-count">
+                      今月の拡張回数
                     </label>
                     <input
-                      id="new-ext-usage"
+                      id="new-ext-count"
                       type="number"
                       min={0}
                       value={newDriverForm.extUsageCountMonth}
@@ -586,7 +629,7 @@ export default function DriverLedgerPage({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="new-monthly-jobs">
-                      今月ジョブ実績
+                      今月の実績件数
                     </label>
                     <input
                       id="new-monthly-jobs"
@@ -598,11 +641,11 @@ export default function DriverLedgerPage({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="new-current-dispatch">
-                      拘束（稼働）件数
+                    <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="new-dispatch-count">
+                      現在の稼働件数
                     </label>
                     <input
-                      id="new-current-dispatch"
+                      id="new-dispatch-count"
                       type="number"
                       min={0}
                       value={newDriverForm.currentDispatchNumber}
@@ -619,22 +662,30 @@ export default function DriverLedgerPage({
                     id="new-notes"
                     value={newDriverForm.notes}
                     onChange={(e) => handleNewDriverChange("notes", e.target.value)}
-                    className="h-24 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    rows={3}
                   />
                 </div>
               </div>
-              <div className="pt-2">
+              <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseNewDriverModal}
+                  className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-400 hover:text-slate-800"
+                >
+                  キャンセル
+                </button>
                 <button
                   type="submit"
-                  className="inline-flex w-full items-center justify-center rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow transition hover:bg-slate-700"
+                  className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-emerald-500"
                 >
                   ドライバーを登録
                 </button>
               </div>
             </form>
-          </section>
+          </div>
         </div>
-      </div>
+      )}
       {selectedDriver && isDetailOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-6"
