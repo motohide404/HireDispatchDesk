@@ -30,14 +30,14 @@ const NAV_ITEMS: NavItem[] = [
     description: "ドライバーの資格・書類・点呼記録を管理します。"
   },
   {
-    key: "partners",
-    label: "取引先",
-    description: "取引先・拠点・担当者の情報を管理します。"
-  },
-  {
     key: "vehicles",
     label: "車両台帳",
     description: "登録車両の車検・点検・整備情報を一覧管理します。"
+  },
+  {
+    key: "partners",
+    label: "取引先",
+    description: "取引先・拠点・担当者の情報を管理します。"
   }
 ];
 

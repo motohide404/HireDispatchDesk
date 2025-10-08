@@ -343,17 +343,6 @@ export default function DriverLedgerPage({
               );
             })}
           </ul>
-          {selectedDriver && (
-            <div className="border-t border-slate-100 px-5 py-4">
-              <button
-                type="button"
-                onClick={() => setIsDetailOpen(true)}
-                className="inline-flex w-full items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-400 hover:text-slate-800"
-              >
-                選択中のドライバー詳細を開く
-              </button>
-            </div>
-          )}
         </section>
 
           <section className="rounded-3xl border border-slate-200 bg-white shadow-sm">
