@@ -6,13 +6,13 @@ type DriverPoolProps = {
 };
 
 const DriverPool = ({ drivers }: DriverPoolProps) => {
+  const visibleDrivers = drivers.slice(0, 10);
+  const hiddenDriverCount = Math.max(drivers.length - visibleDrivers.length, 0);
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-full flex flex-col overflow-hidden">
       <div className="px-4 py-3 border-b border-slate-200">
-        <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold text-slate-700">Driver Pool</h2>
-          <span className="text-xs text-slate-500">{drivers.length} drivers</span>
-        </div>
+        <h2 className="text-lg font-semibold text-slate-700">Driver Pool</h2>
         <p className="text-xs text-slate-500">Assign drivers by dragging onto reservations.</p>
       </div>
       <Droppable droppableId="driverPool" type="DRIVER">
@@ -24,7 +24,7 @@ const DriverPool = ({ drivers }: DriverPoolProps) => {
               snapshot.isDraggingOver ? "bg-sky-50" : "bg-white"
             }`}
           >
-            {drivers.map((driver, index) => (
+            {visibleDrivers.map((driver, index) => (
               <Draggable draggableId={driver.id} index={index} key={driver.id}>
                 {(dragProvided, dragSnapshot) => (
                   <div
@@ -54,6 +54,11 @@ const DriverPool = ({ drivers }: DriverPoolProps) => {
             {drivers.length === 0 && (
               <p className="text-sm text-slate-500 text-center py-6">
                 All drivers are currently assigned.
+              </p>
+            )}
+            {hiddenDriverCount > 0 && (
+              <p className="text-xs text-slate-500 text-center">
+                +{hiddenDriverCount} more drivers not shown.
               </p>
             )}
             {provided.placeholder}
