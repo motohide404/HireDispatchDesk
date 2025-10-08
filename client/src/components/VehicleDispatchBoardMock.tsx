@@ -5,6 +5,7 @@ import { useFlashOnChange } from "../lib/useFlashOnChange";
 
 import "./VehicleDispatchBoardMock.css";
 import type { DispatchVehicle } from "../data/vehicles";
+import Calendar from "./Calendar";
 
 const hours = Array.from({ length: 25 }, (_, i) => i);
 const DRIVER_POOL_WIDTH_INIT = 240;
@@ -547,6 +548,8 @@ export default function VehicleDispatchBoardMock({
   const [viewDate, setViewDate] = useState("2025-10-03");
   const dateInputRef = useRef<HTMLInputElement | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const calendarWrapperRef = useRef<HTMLDivElement | null>(null);
 
   const viewDateObj = useMemo(() => new Date(`${viewDate}T00:00:00+09:00`), [viewDate]);
   const viewDateDisplay = useMemo(() => {
@@ -828,14 +831,35 @@ export default function VehicleDispatchBoardMock({
     resetJobDraft();
     setJobFormOpen(false);
   };
+  useEffect(() => {
+    if (!calendarOpen) return;
+    const handleClick = (event: MouseEvent) => {
+      if (!calendarWrapperRef.current) return;
+      if (!calendarWrapperRef.current.contains(event.target as Node)) {
+        setCalendarOpen(false);
+      }
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setCalendarOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [calendarOpen]);
+
   const openDatePicker = () => {
+    setCalendarOpen((prev) => !prev);
     const input = dateInputRef.current;
     if (!input) return;
-    if (typeof (input as HTMLInputElement & { showPicker?: () => void }).showPicker === "function") {
-      (input as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
-      return;
+    const picker = (input as HTMLInputElement & { showPicker?: () => void }).showPicker;
+    if (typeof picker === "function") {
+      picker.call(input);
     }
-    input.click();
   };
 
 
@@ -1319,27 +1343,55 @@ export default function VehicleDispatchBoardMock({
               >
                 ▶
               </button>
-              <button
-                type="button"
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100"
-                onClick={openDatePicker}
-                title="カレンダーから日付を選択"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M7 3v2m10-2v2M5 8h14M6 6h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z" strokeLinecap="round" strokeLinejoin="round" />
-                  <rect x="8" y="11" width="3" height="3" rx="0.5" />
-                  <rect x="13" y="11" width="3" height="3" rx="0.5" />
-                  <rect x="8" y="15" width="3" height="3" rx="0.5" />
-                  <rect x="13" y="15" width="3" height="3" rx="0.5" />
-                </svg>
-              </button>
+              <div ref={calendarWrapperRef} className="relative">
+                <button
+                  type="button"
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-100"
+                  onClick={openDatePicker}
+                  title="カレンダーから日付を選択"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <path
+                      d="M7 3v2m10-2v2M5 8h14M6 6h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <rect x="8" y="11" width="3" height="3" rx="0.5" />
+                    <rect x="13" y="11" width="3" height="3" rx="0.5" />
+                    <rect x="8" y="15" width="3" height="3" rx="0.5" />
+                    <rect x="13" y="15" width="3" height="3" rx="0.5" />
+                  </svg>
+                </button>
+                {calendarOpen ? (
+                  <div className="absolute right-0 z-20 mt-2 w-72 max-w-[calc(100vw-2rem)]">
+                    <Calendar
+                      value={viewDate}
+                      onSelect={(next) => {
+                        setViewDate(next);
+                        setCalendarOpen(false);
+                      }}
+                      onClose={() => setCalendarOpen(false)}
+                    />
+                  </div>
+                ) : null}
+              </div>
               <input
                 ref={dateInputRef}
                 type="date"
                 className="sr-only"
                 value={viewDate}
                 onChange={(e) => {
-                  if (e.target.value) setViewDate(e.target.value);
+                  if (e.target.value) {
+                    setViewDate(e.target.value);
+                    setCalendarOpen(false);
+                  }
                 }}
               />
             </div>
