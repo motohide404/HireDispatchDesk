@@ -11,7 +11,7 @@ const hours = Array.from({ length: 25 }, (_, i) => i);
 const DRIVER_POOL_WIDTH_INIT = 240;
 const DRIVER_POOL_WIDTH_MIN = 200;
 const DRIVER_POOL_WIDTH_MAX = 360;
-const DEFAULT_PX_PER_MIN = 2;
+const DEFAULT_PX_PER_MIN = 4;
 const MIN_PX_PER_MIN = 0.3;
 const BUFFER_MINUTES = 15;
 const RESIZE_STEP_MINUTES = 5;
@@ -482,32 +482,15 @@ function mergeIntervals(intervals: Interval[]): Interval[] {
   return merged;
 }
 
-function computeFreeSlots(mergedIntervals: Interval[], dayStart: number, dayEnd: number): Interval[] {
-  const slots: Interval[] = [];
-  let cursor = dayStart;
-  for (const interval of mergedIntervals) {
-    if (interval.start > cursor) {
-      slots.push({ start: cursor, end: interval.start });
-    }
-    cursor = Math.max(cursor, interval.end);
-  }
-  if (cursor < dayEnd) {
-    slots.push({ start: cursor, end: dayEnd });
-  }
-  return slots;
-}
-
 type VehicleDispatchBoardMockProps = {
   drivers: DriverInfo[];
   vehicles: DispatchVehicle[];
-  onOpenVehicleLedger?: () => void;
   onOpenDriverLedger?: () => void;
 };
 
 export default function VehicleDispatchBoardMock({
   drivers,
   vehicles,
-  onOpenVehicleLedger,
   onOpenDriverLedger
 }: VehicleDispatchBoardMockProps) {
   const [fullView, setFullView] = useState(false);
@@ -561,64 +544,6 @@ export default function VehicleDispatchBoardMock({
     const weekday = viewDateObj.toLocaleDateString("ja-JP", { weekday: "short" });
     return `${base}（${weekday}）`;
   }, [viewDateObj]);
-  const vehicleDailySummaries = useMemo(() => {
-    const dayStart = viewDateObj.getTime();
-    if (!Number.isFinite(dayStart)) {
-      return vehicles.map((vehicle) => ({
-        vehicle,
-        bookings: [],
-        duties: [],
-        mergedIntervals: [],
-        busyMinutes: 0,
-        freeMinutes: 24 * 60,
-        longestFreeMinutes: 24 * 60,
-        freeSlots: [] as Interval[],
-        utilization: 0
-      }));
-    }
-    const dayEnd = dayStart + DAY_MS;
-    const totalMinutes = Math.round((dayEnd - dayStart) / 60000);
-
-    return vehicles.map((vehicle) => {
-      const todaysBookings = bookings
-        .filter((b) => b.vehicleId === vehicle.id)
-        .map((b) => ({ booking: b, range: clipIntervalToDay(b.start, b.end, dayStart, dayEnd) }))
-        .filter((entry): entry is { booking: BoardBooking; range: Interval } => Boolean(entry.range));
-      const todaysDuties = appDuties
-        .filter((duty) => duty.vehicleId === vehicle.id)
-        .map((duty) => ({ duty, range: clipIntervalToDay(duty.start, duty.end, dayStart, dayEnd) }))
-        .filter((entry): entry is { duty: AppDuty; range: Interval } => Boolean(entry.range));
-
-      const mergedIntervals = mergeIntervals([
-        ...todaysBookings.map((entry) => entry.range),
-        ...todaysDuties.map((entry) => entry.range)
-      ]);
-
-      const busyMinutes = Math.round(
-        mergedIntervals.reduce((acc, interval) => acc + (interval.end - interval.start) / 60000, 0)
-      );
-      const freeMinutes = Math.max(0, totalMinutes - busyMinutes);
-
-      const freeSlots = computeFreeSlots(mergedIntervals, dayStart, dayEnd);
-      const longestFreeMinutes = freeSlots.length
-        ? Math.max(...freeSlots.map((slot) => Math.round((slot.end - slot.start) / 60000)))
-        : freeMinutes;
-
-      const utilization = totalMinutes === 0 ? 0 : busyMinutes / totalMinutes;
-
-      return {
-        vehicle,
-        bookings: todaysBookings.map((entry) => entry.booking),
-        duties: todaysDuties.map((entry) => entry.duty),
-        mergedIntervals,
-        busyMinutes,
-        freeMinutes,
-        freeSlots,
-        longestFreeMinutes,
-        utilization
-      };
-    });
-  }, [appDuties, bookings, vehicles, viewDateObj]);
   const driverDailySummaries = useMemo(() => {
     const dayStart = viewDateObj.getTime();
     if (!Number.isFinite(dayStart)) {
@@ -870,7 +795,7 @@ export default function VehicleDispatchBoardMock({
       const w = el.clientWidth;
       if (!Number.isFinite(w) || w <= 0) return;
       const base = Math.max(MIN_PX_PER_MIN, w / (24 * 60));
-      const next = fullView ? base : Math.min(DEFAULT_PX_PER_MIN, base);
+      const next = fullView ? base : Math.max(DEFAULT_PX_PER_MIN, base);
       setPxPerMin((prev) => (Math.abs(prev - next) < 0.005 ? prev : next));
     };
     fit();
@@ -1884,93 +1809,6 @@ export default function VehicleDispatchBoardMock({
             </div>
           </section>
 
-          <section id="vehicle-info" className="scroll-mt-24">
-            <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 px-5 py-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-800">車両情報</h2>
-                  <p className="text-xs text-slate-500">
-                    車検証・整備履歴・事故記録などを管理する専用ページへの入り口です。
-                  </p>
-                </div>
-                <div className="text-right text-xs text-slate-500 space-y-1">
-                  <div>登録車両 {vehicleDailySummaries.length} 台</div>
-                  <div>本日稼働中 {vehicleDailySummaries.filter((summary) => summary.busyMinutes > 0).length} 台</div>
-                </div>
-              </div>
-              <div className="space-y-4 px-5 py-5 text-sm text-slate-700">
-                <p>
-                  配車ボードでは概要のみを確認し、詳細は別ページで登録・更新します。車両ごとの点検日や車検期限、事故歴、添付資料などを整理できるワークスペースを想定しています。
-                </p>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-                  <dl className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <dt className="text-[11px] uppercase tracking-wide text-slate-500">本日の予約件数</dt>
-                      <dd className="text-lg font-semibold text-slate-800">
-                        {vehicleDailySummaries.reduce((acc, summary) => acc + summary.bookings.length, 0)} 件
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-[11px] uppercase tracking-wide text-slate-500">アプリ稼働件数</dt>
-                      <dd className="text-lg font-semibold text-slate-800">
-                        {vehicleDailySummaries.reduce((acc, summary) => acc + summary.duties.length, 0)} 件
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <a
-                    href="#"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      onOpenVehicleLedger?.();
-                    }}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-slate-800 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-slate-700"
-                  >
-                    車両情報ページを開く
-                  </a>
-                  <span className="text-xs text-slate-500 self-center">
-                    ※ 別タブで詳細管理ページを想定（モックリンク）
-                  </span>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section id="customer-info" className="scroll-mt-24">
-            <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 px-5 py-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-800">顧客情報</h2>
-                  <p className="text-xs text-slate-500">
-                    顧客の連絡先・契約条件・請求履歴を管理する専用ボードへの導線です。
-                  </p>
-                </div>
-                <div className="text-xs text-slate-500">
-                  <span>ボード内に顧客カードを追加予定</span>
-                </div>
-              </div>
-              <div className="space-y-4 px-5 py-5 text-sm text-slate-700">
-                <p>
-                  配車ボードからは顧客の基本的な識別のみを行い、詳細な契約内容や注意事項は専用ボードで管理します。将来的にはジョブや予約から顧客カードへリンクする設計を想定しています。
-                </p>
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-4 text-xs text-slate-500">
-                  顧客ボードでは、法人・個人別のタブや担当営業メモ、請求書ファイルの保管などを配置予定です。
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <a
-                    href="/customer-board"
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-500"
-                  >
-                    顧客情報ページを開く
-                  </a>
-                  <span className="text-xs text-slate-500 self-center">
-                    ※ 別ページで顧客台帳を構築予定（モックリンク）
-                  </span>
-                </div>
-              </div>
-            </div>
-          </section>
         </div>
 
         {jobFormOpen && (
