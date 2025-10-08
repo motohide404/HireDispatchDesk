@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   partnerLedger,
   type PartnerContact,
@@ -106,6 +106,8 @@ export default function PartnerLedgerPage() {
     return order;
   });
   const [draggingOfficeId, setDraggingOfficeId] = useState<string | null>(null);
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
+  const [isDetailModalOpen, setDetailModalOpen] = useState(false);
 
   const partnerCategories: PartnerRecord["category"][] = [
     "旅行会社",
@@ -240,6 +242,15 @@ export default function PartnerLedgerPage() {
 
   const closePartnerModal = () => {
     setPartnerModalOpen(false);
+  };
+
+  const openPartnerDetail = (partnerId: string) => {
+    setSelectedPartnerId(partnerId);
+    setDetailModalOpen(true);
+  };
+
+  const closePartnerDetail = () => {
+    setDetailModalOpen(false);
   };
 
   const handlePartnerFormChange = (
@@ -435,6 +446,44 @@ export default function PartnerLedgerPage() {
     });
   }, [entries, normalizedSearch]);
 
+  useEffect(() => {
+    if (filteredEntries.length === 0) {
+      if (selectedPartnerId !== null) {
+        setSelectedPartnerId(null);
+      }
+      if (isDetailModalOpen) {
+        setDetailModalOpen(false);
+      }
+      return;
+    }
+
+    const exists = filteredEntries.some(
+      ({ partner }) => partner.id === selectedPartnerId
+    );
+
+    if (!exists) {
+      setSelectedPartnerId(filteredEntries[0].partner.id);
+    }
+  }, [filteredEntries, isDetailModalOpen, selectedPartnerId]);
+
+  const selectedEntry =
+    filteredEntries.find(({ partner }) => partner.id === selectedPartnerId) ??
+    null;
+  const orderedOffices = selectedEntry
+    ? getOrderedOffices(selectedEntry.partner.id)
+    : [];
+  const selectedPartner = selectedEntry?.partner ?? null;
+  const selectedContacts = selectedEntry?.contacts ?? [];
+  const selectedPartnerAddress = selectedEntry
+    ? [
+        selectedEntry.partner.prefecture,
+        selectedEntry.partner.city,
+        selectedEntry.partner.addressLine1
+      ]
+        .filter(Boolean)
+        .join("")
+    : "";
+
   return (
     <>
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-8">
@@ -482,398 +531,457 @@ export default function PartnerLedgerPage() {
         </div>
       </div>
 
-      <div className="space-y-8">
+      <div className="space-y-6">
         {filteredEntries.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center text-sm text-slate-500">
             条件に合致する取引先が見つかりませんでした。検索条件を変更してください。
           </div>
         ) : (
-          filteredEntries.map(({ partner, contacts }) => {
-            const orderedOffices = getOrderedOffices(partner.id);
-            const partnerAddress = [
-              partner.prefecture,
-              partner.city,
-              partner.addressLine1
-            ]
-              .filter(Boolean)
-              .join("");
-
-            return (
-              <section
-                key={partner.id}
-                className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
-              >
-                <div className="flex flex-col gap-6 border-b border-slate-100 bg-slate-50/60 px-6 py-5">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="space-y-1">
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                        <span className="font-semibold">{partner.internalId}</span>
-                        <span className="inline-flex items-center rounded-full bg-slate-200 px-2.5 py-0.5 font-medium text-slate-700">
-                          {partner.category}
-                        </span>
-                      </div>
-                      <h3 className="text-xl font-bold text-slate-900">{partner.hqName}</h3>
-                      <p className="text-sm text-slate-500">表示名：{partner.displayName}</p>
+          <div className="space-y-3">
+            {filteredEntries.map(({ partner }) => {
+              const partnerAddress = [
+                partner.prefecture,
+                partner.city,
+                partner.addressLine1
+              ]
+                .filter(Boolean)
+                .join("");
+              const isSelected = partner.id === selectedPartnerId;
+              return (
+                <button
+                  key={partner.id}
+                  type="button"
+                  onClick={() => openPartnerDetail(partner.id)}
+                  className={`w-full rounded-2xl border px-5 py-4 text-left transition ${
+                    isSelected
+                      ? "border-slate-500 bg-white shadow-md ring-2 ring-slate-200"
+                      : "border-slate-200 bg-white shadow-sm hover:border-slate-300 hover:shadow"
+                  }`}
+                >
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                      <span className="font-semibold">{partner.internalId}</span>
+                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 font-medium text-slate-700">
+                        {partner.category}
+                      </span>
                     </div>
-                    <div className="flex flex-col items-start gap-1 text-xs text-slate-500 sm:items-end">
-                      <div className="rounded-full bg-slate-900/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
+                    <div>
+                      <p className="text-base font-semibold text-slate-900">
+                        {partner.displayName}
+                      </p>
+                      <p className="text-xs text-slate-500">正式名称：{partner.hqName}</p>
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      <div>
+                        {partner.postalCode ? (
+                          `〒${partner.postalCode}`
+                        ) : (
+                          <span className="text-slate-400">郵便番号未登録</span>
+                        )}
+                      </div>
+                      <div>
+                        {partnerAddress ? (
+                          partnerAddress
+                        ) : (
+                          <span className="text-slate-400">住所未登録</span>
+                        )}
+                      </div>
+                      <div>代表電話：{partner.phone}</div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {isDetailModalOpen && selectedPartner ? (
+          <Modal
+            title={selectedPartner.displayName}
+            description="取引先詳細"
+            onClose={closePartnerDetail}
+          >
+            <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex flex-col gap-6 border-b border-slate-100 bg-slate-50/60 px-6 py-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                      <span className="font-semibold">{selectedPartner.internalId}</span>
+                      <span className="inline-flex items-center rounded-full bg-slate-200 px-2.5 py-0.5 font-medium text-slate-700">
+                        {selectedPartner.category}
+                      </span>
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-900">{selectedPartner.hqName}</h3>
+                    <p className="text-sm text-slate-500">表示名：{selectedPartner.displayName}</p>
+                  </div>
+                  <div className="flex flex-col items-start gap-3 sm:items-end">
+                    <div className="flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold uppercase text-white">
                         HQ
                       </div>
-                      <div className="text-right">
-                        <div>代表電話：{partner.phone}</div>
-                        <div>代表メール：{partner.email}</div>
-                        <div>当日連絡先：{partner.emergencyContact ?? "-"}</div>
+                      <span>本社</span>
+                    </div>
+                    <div className="text-right text-sm text-slate-600">
+                      <div>代表電話：{selectedPartner.phone}</div>
+                      <div>代表メール：{selectedPartner.email}</div>
+                      <div>
+                        当日連絡先：
+                        {selectedPartner.emergencyContact ?? (
+                          <span className="text-slate-400">-</span>
+                        )}
                       </div>
                     </div>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full border border-slate-200 text-xs text-slate-600">
-                      <thead className="bg-white/70 text-[11px] uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">取引先ID</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">区分</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">HQ名称</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">表示名</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">正式名称</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">よみ</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">郵便番号</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">住所</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">建物名</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">代表電話</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">FAX</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">代表メール</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">当日連絡先</th>
-                          <th className="border border-slate-200 px-3 py-2 text-left font-medium">備考</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="bg-white">
-                          <td className="border border-slate-200 px-3 py-2 font-semibold text-slate-700">
-                            {partner.internalId}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {partner.category}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {partner.hqName}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {partner.displayName}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {partner.officialName ?? <span className="text-slate-400">-</span>}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {partner.nameKana ?? <span className="text-slate-400">-</span>}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {partner.postalCode ? (
-                              `〒${partner.postalCode}`
-                            ) : (
-                              <span className="text-slate-400">-</span>
-                            )}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {partnerAddress ? (
-                              partnerAddress
-                            ) : (
-                              <span className="text-slate-400">-</span>
-                            )}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {partner.addressLine2 ? (
-                              partner.addressLine2
-                            ) : (
-                              <span className="text-slate-400">-</span>
-                            )}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {partner.phone}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {partner.fax ? (
-                              partner.fax
-                            ) : (
-                              <span className="text-slate-400">-</span>
-                            )}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {partner.email}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {partner.emergencyContact ?? <span className="text-slate-400">-</span>}
-                          </td>
-                          <td className="border border-slate-200 px-3 py-2 text-slate-700">
-                            {renderMultiline(partner.notes)}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
                   </div>
                 </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full border border-slate-200 text-xs text-slate-600">
+                  <thead className="bg-white/70 text-[11px] uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">取引先ID</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">区分</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">HQ名称</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">表示名</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">正式名称</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">よみ</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">郵便番号</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">住所</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">建物名</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">代表電話</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">FAX</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">代表メール</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">当日連絡先</th>
+                      <th className="border border-slate-200 px-3 py-2 text-left font-medium">備考</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="bg-white">
+                      <td className="border border-slate-200 px-3 py-2 font-semibold text-slate-700">
+                        {selectedPartner.internalId}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {selectedPartner.category}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {selectedPartner.hqName}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {selectedPartner.displayName}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {selectedPartner.officialName ?? (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {selectedPartner.nameKana ?? (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {selectedPartner.postalCode ? (
+                          `〒${selectedPartner.postalCode}`
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {selectedPartnerAddress ? (
+                          selectedPartnerAddress
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {selectedPartner.addressLine2 ? (
+                          selectedPartner.addressLine2
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {selectedPartner.phone}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {selectedPartner.fax ? (
+                          selectedPartner.fax
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {selectedPartner.email}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {selectedPartner.emergencyContact ?? (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2 text-slate-700">
+                        {renderMultiline(selectedPartner.notes)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                </div>
+              </div>
 
-                <div className="flex flex-col gap-8 px-6 py-6">
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => openOfficeModal(partner.id)}
-                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900"
-                    >
-                      拠点を追加
-                    </button>
+              <div className="flex flex-col gap-8 px-6 py-6">
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => openOfficeModal(selectedPartner.id)}
+                  className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:text-slate-900"
+                >
+                  拠点を追加
+                </button>
+              </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold tracking-wide text-slate-500">
+                      拠点（営業所）
+                    </h4>
+                    <span className="text-xs text-slate-400">{orderedOffices.length} 拠点</span>
                   </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold tracking-wide text-slate-500">
-                        拠点（営業所）
-                      </h4>
-                      <span className="text-xs text-slate-400">{orderedOffices.length} 拠点</span>
+                  {orderedOffices.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                      登録された拠点はありません。
                     </div>
-                    {orderedOffices.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-                        登録された拠点はありません。
-                      </div>
-                    ) : (
-                      <div
-                        className="grid gap-4 sm:grid-cols-2"
-                        onDragOver={(event) => event.preventDefault()}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          handleOfficeDropToEnd(partner.id);
-                        }}
-                      >
-                        {orderedOffices.map((office) => {
-                          const officeAddress = [
-                            office.prefecture,
-                            office.city,
-                            office.addressLine1
-                          ]
-                            .filter(Boolean)
-                            .join("");
-                          return (
-                            <div
-                              key={office.id}
-                              draggable
-                              onDragStart={() => handleOfficeDragStart(office.id)}
-                              onDragEnd={handleOfficeDragEnd}
-                              onDragOver={(event) => {
-                                event.preventDefault();
-                                event.dataTransfer.dropEffect = "move";
-                              }}
-                              onDrop={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                handleOfficeDrop(partner.id, office.id);
-                              }}
-                              className="flex h-full flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-                            >
-                              <div className="space-y-1">
+                  ) : (
+                    <div
+                      className="grid gap-4 sm:grid-cols-2"
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        handleOfficeDropToEnd(selectedPartner.id);
+                      }}
+                    >
+                      {orderedOffices.map((office) => {
+                      const officeAddress = [
+                        office.prefecture,
+                        office.city,
+                        office.addressLine1
+                      ]
+                        .filter(Boolean)
+                        .join("");
+                      return (
+                        <div
+                          key={office.id}
+                          draggable
+                          onDragStart={() => handleOfficeDragStart(office.id)}
+                          onDragEnd={handleOfficeDragEnd}
+                          onDragOver={(event) => {
+                            event.preventDefault();
+                            event.dataTransfer.dropEffect = "move";
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            handleOfficeDrop(selectedPartner.id, office.id);
+                          }}
+                          className="flex h-full flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                        >
+                          <div className="space-y-1">
+                            <div className="text-xs font-semibold text-slate-500">
+                              {office.internalId}
+                            </div>
+                            <h5 className="text-lg font-semibold text-slate-900">
+                              {office.displayName}
+                            </h5>
+                            <p className="text-xs text-slate-500">
+                              正式名称：{office.officialName ?? "-"}
+                            </p>
+                          </div>
+                          <dl className="grid gap-y-3 text-sm">
+                            <div>
+                              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                郵便番号
+                              </dt>
+                              <dd className="mt-1 text-slate-900">
+                                {office.postalCode ? (
+                                  `〒${office.postalCode}`
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                住所
+                              </dt>
+                              <dd className="mt-1 text-slate-900">
+                                {officeAddress ? (
+                                  officeAddress
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                建物名
+                              </dt>
+                              <dd className="mt-1 text-slate-900">
+                                {office.addressLine2 ?? (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                電話
+                              </dt>
+                              <dd className="mt-1 text-slate-900">
+                                {office.phone ?? (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                メール
+                              </dt>
+                              <dd className="mt-1 text-slate-900">
+                                {office.email ?? (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                当日連絡先
+                              </dt>
+                              <dd className="mt-1 text-slate-900">
+                                {office.emergencyContact ?? (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                備考
+                              </dt>
+                              <dd className="mt-1 text-slate-900">
+                                {renderMultiline(office.notes)}
+                              </dd>
+                            </div>
+                          </dl>
+                        </div>
+                      );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold tracking-wide text-slate-500">
+                      担当者
+                    </h4>
+                    <span className="text-xs text-slate-400">{selectedContacts.length} 名</span>
+                  </div>
+                  {selectedContacts.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                      登録された担当者はありません。
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {selectedContacts.map((contact) => {
+                        const affiliation =
+                          contact.affiliationType === "office"
+                            ? officeLookup.get(contact.affiliationId)?.displayName ?? "-"
+                            : selectedPartner.displayName;
+                        return (
+                          <div
+                            key={contact.id}
+                            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                          >
+                          <div className="flex flex-col gap-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
                                 <div className="text-xs font-semibold text-slate-500">
-                                  {office.internalId}
+                                  {contact.internalId}
                                 </div>
                                 <h5 className="text-lg font-semibold text-slate-900">
-                                  {office.displayName}
+                                  {contact.name}
                                 </h5>
-                                <p className="text-xs text-slate-500">
-                                  正式名称：{office.officialName ?? "-"}
-                                </p>
+                                {contact.nameKana ? (
+                                  <p className="text-xs text-slate-500">{contact.nameKana}</p>
+                                ) : null}
                               </div>
-                              <dl className="grid gap-y-3 text-sm">
-                                <div>
-                                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                    郵便番号
-                                  </dt>
-                                  <dd className="mt-1 text-slate-900">
-                                    {office.postalCode ? (
-                                      `〒${office.postalCode}`
-                                    ) : (
-                                      <span className="text-slate-400">-</span>
-                                    )}
-                                  </dd>
-                                </div>
-                                <div>
-                                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                    住所
-                                  </dt>
-                                  <dd className="mt-1 text-slate-900">
-                                    {officeAddress ? (
-                                      officeAddress
-                                    ) : (
-                                      <span className="text-slate-400">-</span>
-                                    )}
-                                  </dd>
-                                </div>
-                                <div>
-                                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                    建物名
-                                  </dt>
-                                  <dd className="mt-1 text-slate-900">
-                                    {office.addressLine2 ? (
-                                      office.addressLine2
-                                    ) : (
-                                      <span className="text-slate-400">-</span>
-                                    )}
-                                  </dd>
-                                </div>
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div>
-                                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                      代表電話（拠点）
-                                    </dt>
-                                    <dd className="mt-1 text-slate-900">
-                                      {office.phone ?? <span className="text-slate-400">-</span>}
-                                    </dd>
-                                  </div>
-                                  <div>
-                                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                      メール（拠点）
-                                    </dt>
-                                    <dd className="mt-1 text-slate-900">
-                                      {office.email ?? <span className="text-slate-400">-</span>}
-                                    </dd>
-                                  </div>
-                                </div>
-                                <div>
-                                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                    当日連絡先（24h・任意）
-                                  </dt>
-                                  <dd className="mt-1 text-slate-900">
-                                    {office.emergencyContact ?? <span className="text-slate-400">-</span>}
-                                  </dd>
-                                </div>
-                                <div>
-                                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                    備考
-                                  </dt>
-                                  <dd className="mt-1 text-slate-900">{renderMultiline(office.notes)}</dd>
-                                </div>
-                              </dl>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold tracking-wide text-slate-500">
-                        担当者（HQ直下または拠点に紐付け）
-                      </h4>
-                      <span className="text-xs text-slate-400">{contacts.length} 名</span>
-                    </div>
-                    {contacts.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-                        登録された担当者はありません。
-                      </div>
-                    ) : (
-                      <div className="grid gap-4 lg:grid-cols-2">
-                        {contacts.map((contact) => {
-                          const affiliation =
-                            contact.affiliationType === "office"
-                              ? officeLookup.get(contact.affiliationId)?.displayName ?? "拠点未登録"
-                              : partner.hqName;
-                          return (
-                            <div
-                              key={contact.id}
-                              className="flex h-full flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-                            >
-                              <div className="flex flex-col gap-3">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div>
-                                    <div className="text-xs font-semibold text-slate-500">
-                                      {contact.internalId}
-                                    </div>
-                                    <h5 className="text-lg font-semibold text-slate-900">
-                                      {contact.name}
-                                    </h5>
-                                    {contact.nameKana && (
-                                      <p className="text-xs text-slate-500">{contact.nameKana}</p>
-                                    )}
-                                  </div>
-                                  <div className="flex flex-wrap items-center justify-end gap-2">
-                                    <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
-                                      {contact.role}
-                                    </span>
-                                    {contact.isPrimary && (
-                                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-                                        主担当
-                                      </span>
-                                    )}
-                                    <span
-                                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                                        contact.onCall
-                                          ? "bg-emerald-100 text-emerald-700"
-                                          : "bg-slate-200 text-slate-600"
-                                      }`}
-                                    >
-                                      当日連絡{contact.onCall ? "可" : "不可"}
-                                    </span>
-                                  </div>
-                                </div>
-                                <dl className="grid gap-x-4 gap-y-3 text-sm sm:grid-cols-2">
-                                  <div>
-                                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                      所属タイプ
-                                    </dt>
-                                    <dd className="mt-1 text-slate-900">
-                                      {contact.affiliationType === "partner" ? "取引先" : "拠点"}
-                                    </dd>
-                                  </div>
-                                  <div>
-                                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                      所属ID（取引先ID または 拠点ID）
-                                    </dt>
-                                    <dd className="mt-1 text-slate-900">{contact.affiliationId}</dd>
-                                  </div>
-                                  <div>
-                                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                      所属名
-                                    </dt>
-                                    <dd className="mt-1 text-slate-900">{affiliation}</dd>
-                                  </div>
-                                  <div>
-                                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                      電話（直通・任意）
-                                    </dt>
-                                    <dd className="mt-1 text-slate-900">
-                                      {contact.phone ?? <span className="text-slate-400">-</span>}
-                                    </dd>
-                                  </div>
-                                  <div>
-                                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                      メール
-                                    </dt>
-                                    <dd className="mt-1 break-all text-slate-900">{contact.email}</dd>
-                                  </div>
-                                  <div className="sm:col-span-2">
-                                    <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                                      備考
-                                    </dt>
-                                    <dd className="mt-1 text-slate-900">{renderMultiline(contact.notes)}</dd>
-                                  </div>
-                                </dl>
-                              </div>
-                              <div className="flex items-center justify-end">
-                                <button
-                                  type="button"
-                                  className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                              <div className="flex flex-wrap items-center justify-end gap-2">
+                                <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                                  {contact.role}
+                                </span>
+                                {contact.isPrimary ? (
+                                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                                    主担当
+                                  </span>
+                                ) : null}
+                                <span
+                                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                                    contact.onCall
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : "bg-slate-200 text-slate-600"
+                                  }`}
                                 >
-                                  紐付け切替
-                                </button>
+                                  当日連絡{contact.onCall ? "可" : "不可"}
+                                </span>
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                            <dl className="grid gap-x-4 gap-y-3 text-sm sm:grid-cols-2">
+                              <div>
+                                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                  所属タイプ
+                                </dt>
+                                <dd className="mt-1 text-slate-900">
+                                  {contact.affiliationType === "partner" ? "取引先" : "拠点"}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                  所属ID（取引先ID または 拠点ID）
+                                </dt>
+                                <dd className="mt-1 text-slate-900">{contact.affiliationId}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                  所属名
+                                </dt>
+                                <dd className="mt-1 text-slate-900">{affiliation}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                  電話（直通・任意）
+                                </dt>
+                                <dd className="mt-1 text-slate-900">
+                                  {contact.phone ?? <span className="text-slate-400">-</span>}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                  メール
+                                </dt>
+                                <dd className="mt-1 break-all text-slate-900">{contact.email}</dd>
+                              </div>
+                              <div className="sm:col-span-2">
+                                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                                  備考
+                                </dt>
+                                <dd className="mt-1 text-slate-900">{renderMultiline(contact.notes)}</dd>
+                              </div>
+                            </dl>
+                          </div>
+                        </div>
+                      );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </section>
-            );
-          })
-        )}
+              </div>
+            </section>
+          </Modal>
+        ) : null}
       </div>
     </div>
 
