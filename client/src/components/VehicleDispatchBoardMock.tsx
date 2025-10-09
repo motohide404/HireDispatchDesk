@@ -1432,73 +1432,6 @@ export default function VehicleDispatchBoardMock({
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col gap-3">
-            <div className="flex items-stretch gap-0">
-              <button
-                type="button"
-                className="w-32 shrink-0 rounded-l-2xl bg-amber-500 px-4 text-lg font-semibold tracking-wide text-white shadow-md hover:bg-amber-500/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-                title="新しいジョブを登録"
-                onClick={openJobForm}
-              >
-                新規追加
-              </button>
-              <div
-                ref={jobPoolRef}
-                className="flex-1 bg-white rounded-r-2xl shadow-md p-3"
-                onDragOver={handleJobPoolDragOver}
-                onDragLeave={handleJobPoolDragLeave}
-                onDrop={handleJobPoolDrop}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="font-medium">ジョブプール（未割当）</h2>
-                  <span className="text-xs text-slate-500">{jobPool.length} 件</span>
-                </div>
-                {jobPool.length === 0 ? (
-                  <div className="text-slate-500 text-sm">未割当の仕事はありません。Excel風入力画面で登録するとここに表示されます。</div>
-                ) : (
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {jobPool.map((j) => {
-                      const durMin = Math.round((new Date(j.end).getTime() - new Date(j.start).getTime()) / 60000);
-                      const vehicle = j.vehicleId != null ? vehicleMap.get(j.vehicleId) ?? null : null;
-                      const driver = j.driverId != null ? driverMap.get(j.driverId) ?? null : null;
-                      const classLabel = j.preferClass ? VEHICLE_CLASS_LABELS[j.preferClass] ?? j.preferClass : "";
-                      const vehicleLabel = vehicle ? `${vehicle.name}` : classLabel ? `${classLabel}希望` : "車両未設定";
-                      const driverLabel = driver ? `${driver.name}（${driver.code}）` : "割当待ち";
-                      return (
-                        <div
-                          key={j.id}
-                          className="min-w-[240px] border rounded-xl p-2 hover:bg-slate-50 cursor-grab active:cursor-grabbing"
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.effectAllowed = "copyMove";
-                            e.dataTransfer.setData("text/x-job-id", String(j.id));
-                            e.dataTransfer.setData("text/plain", String(j.id));
-                          }}
-                          title="モータープールの車両レーンへドラッグで割当"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="font-medium truncate">{j.title}</div>
-                            {classLabel && (
-                              <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-700">{classLabel}</span>
-                            )}
-                          </div>
-                          <div className="text-xs text-slate-600">
-                            {fmt(j.start)} - {fmt(j.end)}（{durMin}分）
-                          </div>
-                          <div className="text-xs text-slate-600">依頼元：{j.client?.name}</div>
-                          <div className="text-[11px] text-slate-500 mt-1">車両：{vehicleLabel}</div>
-                          <div className="text-[11px] text-slate-500">ドライバー：{driverLabel}</div>
-                          {j.amount != null && (
-                            <div className="text-[11px] text-slate-500">金額：{formatCurrency(j.amount)}</div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                <div className="text-[11px] text-slate-500 mt-2">※ 予約バーをここにドラッグするとジョブプールへ戻せます</div>
-              </div>
-            </div>
-
             <div className="relative flex-1 min-w-0">
               {hasPrevOvernight ? (
                 <button
@@ -1626,6 +1559,73 @@ export default function VehicleDispatchBoardMock({
                     ))}
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div className="flex items-stretch gap-0">
+              <button
+                type="button"
+                className="w-32 shrink-0 rounded-l-2xl bg-amber-500 px-4 text-lg font-semibold tracking-wide text-white shadow-md hover:bg-amber-500/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                title="新しいジョブを登録"
+                onClick={openJobForm}
+              >
+                新規追加
+              </button>
+              <div
+                ref={jobPoolRef}
+                className="flex-1 bg-white rounded-r-2xl shadow-md p-3"
+                onDragOver={handleJobPoolDragOver}
+                onDragLeave={handleJobPoolDragLeave}
+                onDrop={handleJobPoolDrop}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="font-medium">ジョブプール（未割当）</h2>
+                  <span className="text-xs text-slate-500">{jobPool.length} 件</span>
+                </div>
+                {jobPool.length === 0 ? (
+                  <div className="text-slate-500 text-sm">未割当の仕事はありません。Excel風入力画面で登録するとここに表示されます。</div>
+                ) : (
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {jobPool.map((j) => {
+                      const durMin = Math.round((new Date(j.end).getTime() - new Date(j.start).getTime()) / 60000);
+                      const vehicle = j.vehicleId != null ? vehicleMap.get(j.vehicleId) ?? null : null;
+                      const driver = j.driverId != null ? driverMap.get(j.driverId) ?? null : null;
+                      const classLabel = j.preferClass ? VEHICLE_CLASS_LABELS[j.preferClass] ?? j.preferClass : "";
+                      const vehicleLabel = vehicle ? `${vehicle.name}` : classLabel ? `${classLabel}希望` : "車両未設定";
+                      const driverLabel = driver ? `${driver.name}（${driver.code}）` : "割当待ち";
+                      return (
+                        <div
+                          key={j.id}
+                          className="min-w-[240px] border rounded-xl p-2 hover:bg-slate-50 cursor-grab active:cursor-grabbing"
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.effectAllowed = "copyMove";
+                            e.dataTransfer.setData("text/x-job-id", String(j.id));
+                            e.dataTransfer.setData("text/plain", String(j.id));
+                          }}
+                          title="モータープールの車両レーンへドラッグで割当"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="font-medium truncate">{j.title}</div>
+                            {classLabel && (
+                              <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-700">{classLabel}</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-600">
+                            {fmt(j.start)} - {fmt(j.end)}（{durMin}分）
+                          </div>
+                          <div className="text-xs text-slate-600">依頼元：{j.client?.name}</div>
+                          <div className="text-[11px] text-slate-500 mt-1">車両：{vehicleLabel}</div>
+                          <div className="text-[11px] text-slate-500">ドライバー：{driverLabel}</div>
+                          {j.amount != null && (
+                            <div className="text-[11px] text-slate-500">金額：{formatCurrency(j.amount)}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="text-[11px] text-slate-500 mt-2">※ 予約バーをここにドラッグするとジョブプールへ戻せます</div>
               </div>
             </div>
           </div>
