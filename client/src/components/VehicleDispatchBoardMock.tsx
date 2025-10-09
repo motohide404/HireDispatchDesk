@@ -1431,202 +1431,203 @@ export default function VehicleDispatchBoardMock({
             <ResizeHandle value={driverWidth} setValue={setDriverWidth} min={DRIVER_POOL_WIDTH_MIN} max={DRIVER_POOL_WIDTH_MAX} side="right" />
           </div>
 
-          <div className="relative flex-1 min-w-0">
-            {hasPrevOvernight ? (
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            <div className="flex items-stretch gap-0">
               <button
                 type="button"
-                onClick={() => shiftViewDate(-1)}
-                className="absolute left-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
-                aria-label="前日の夜間予約へ移動"
-                title="前日の夜間予約へ移動"
+                className="w-32 shrink-0 rounded-l-2xl bg-amber-500 px-4 text-lg font-semibold tracking-wide text-white shadow-md hover:bg-amber-500/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                title="新しいジョブを登録"
+                onClick={openJobForm}
               >
-                ←前
+                新規追加
               </button>
-            ) : null}
-            {hasNextOvernight ? (
-              <button
-                type="button"
-                onClick={() => shiftViewDate(1)}
-                className="absolute right-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
-                aria-label="翌日の夜間予約へ移動"
-                title="翌日の夜間予約へ移動"
+              <div
+                ref={jobPoolRef}
+                className="flex-1 bg-white rounded-r-2xl shadow-md p-3"
+                onDragOver={handleJobPoolDragOver}
+                onDragLeave={handleJobPoolDragLeave}
+                onDrop={handleJobPoolDrop}
               >
-                →翌
-              </button>
-            ) : null}
-            <div
-              ref={centerRef}
-              className={`w-full bg-white rounded-2xl shadow p-3 relative overflow-y-auto ${fullView ? "overflow-x-hidden" : "overflow-x-auto"}`}
-            >
-              <div className="flex items-center justify-between mb-2 sticky left-0 top-0 z-10 bg-white pr-2">
-                <h2 className="font-medium">モータープール</h2>
-                <span className="text-xs text-slate-500">00:00〜24:00（{pxPerMin.toFixed(2)} px/min）</span>
-              </div>
-
-              <div className="relative" style={{ width: CONTENT_WIDTH }}>
-                <GridOverlay hourPx={60 * pxPerMin} />
-                {currentTimePosition.visible ? (
-                  <div
-                    className="pointer-events-none absolute inset-y-0 w-[2px] bg-amber-500"
-                    style={{ left: 0, transform: `translateX(${currentTimePosition.x}px)` }}
-                  />
-                ) : null}
-
-                <div className="space-y-3 pt-6">
-                  {vehicles.map((v) => (
-                    <div
-                      key={v.id}
-                      data-vehicle-id={v.id}
-                      className="relative h-16 border rounded-xl bg-white overflow-hidden"
-                      onDragOver={handleLaneDragOver}
-                      onDragLeave={handleLaneDragLeave}
-                      onDrop={(e) => handleLaneDrop(v.id, e)}
-                    >
-                      {(appDutiesByVehicle.get(v.id) || []).map((a: any) => (
-                        <AppDutyBlock
-                          key={a.id}
-                          duty={a}
-                          pxPerMin={pxPerMin}
-                          viewDate={viewDate}
-                          driverLookup={driverMap}
-                          isOvernight={a.is_overnight}
-                          overnightFromPreviousDay={a.overnight_from_previous_day}
-                          overnightToNextDay={a.overnight_to_next_day}
-                          onClick={() => openDrawer({ type: "duty", data: a, vehicle: v })}
-                          isSelected={selected?.type === "duty" && selected?.id === a.id}
-                          onMoveDutyToVehicle={(dutyId, fromVehicleId, destVehicleId) =>
-                            moveDutyByPointer(dutyId, fromVehicleId, destVehicleId)
-                          }
-                          onDriverDrop={(dutyId, driverId) => assignDriverToAppDuty(dutyId, driverId)}
-                          onResize={(dutyId, nextStart, nextEnd) => handleResizeDuty(dutyId, nextStart, nextEnd)}
-                        />
-                      ))}
-                      {(bookingsByVehicle.get(v.id) || []).map((b: BoardBooking) => (
-                        <BookingBlock
-                          key={b.id}
-                          booking={b}
-                          pxPerMin={pxPerMin}
-                          viewDate={viewDate}
-                          driverLookup={driverMap}
-                          isOvernight={b.is_overnight}
-                          overnightFromPreviousDay={b.overnight_from_previous_day}
-                          overnightToNextDay={b.overnight_to_next_day}
-                          onClick={() => openDrawer({ type: "booking", data: b, vehicle: v })}
-                          isSelected={selected?.type === "booking" && selected?.id === b.id}
-                          resizable={isAppJob(b)}
-                          onDriverDrop={(bookingId: number, driverId: number) => {
-                            const cur = bookings.find((x) => x.id === bookingId);
-                            if (!cur) return;
-                            if (cur.driverId === driverId) return;
-                            if (cur.driverId != null && cur.driverId !== driverId) {
-                              const currentDriverName = driverMap.get(cur.driverId)?.name ?? "現在ドライバー";
-                              const incomingDriverName = driverMap.get(driverId)?.name ?? "新ドライバー";
-                              const ok =
-                                typeof window === "undefined"
-                                  ? true
-                                  : window.confirm(`現在: ${currentDriverName} → 新: ${incomingDriverName} に変更しますか？`);
-                              if (!ok) return;
-                            }
-                            const cand: BoardBooking = { ...cur, driverId };
-                            if (hasDriverTimeConflict(bookings, cand)) {
-                              alert("同一ドライバーの時間重複のため割当できません");
-                              return;
-                            }
-                            setBookings((prev) => prev.map((x) => (x.id === bookingId ? { ...x, driverId } : x)));
-                          }}
-                          onMoveToVehicle={(bookingId, fromVehicleId, destVehicleId, originalDriverId) =>
-                            moveBookingByPointer(bookingId, fromVehicleId, destVehicleId, originalDriverId)
-                          }
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="font-medium">ジョブプール（未割当）</h2>
+                  <span className="text-xs text-slate-500">{jobPool.length} 件</span>
+                </div>
+                {jobPool.length === 0 ? (
+                  <div className="text-slate-500 text-sm">未割当の仕事はありません。Excel風入力画面で登録するとここに表示されます。</div>
+                ) : (
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {jobPool.map((j) => {
+                      const durMin = Math.round((new Date(j.end).getTime() - new Date(j.start).getTime()) / 60000);
+                      const vehicle = j.vehicleId != null ? vehicleMap.get(j.vehicleId) ?? null : null;
+                      const driver = j.driverId != null ? driverMap.get(j.driverId) ?? null : null;
+                      const classLabel = j.preferClass ? VEHICLE_CLASS_LABELS[j.preferClass] ?? j.preferClass : "";
+                      const vehicleLabel = vehicle ? `${vehicle.name}` : classLabel ? `${classLabel}希望` : "車両未設定";
+                      const driverLabel = driver ? `${driver.name}（${driver.code}）` : "割当待ち";
+                      return (
+                        <div
+                          key={j.id}
+                          className="min-w-[240px] border rounded-xl p-2 hover:bg-slate-50 cursor-grab active:cursor-grabbing"
                           draggable
                           onDragStart={(e) => {
-                            e.dataTransfer.effectAllowed = "move";
-                            e.dataTransfer.setData("text/x-booking-id", String(b.id));
-                            e.dataTransfer.setData("text/x-booking-move", String(b.id));
-                            e.dataTransfer.setData("text/x-from-vehicle-id", String(b.vehicleId));
-                            e.dataTransfer.setData("text/x-original-driver-id", b.driverId != null ? String(b.driverId) : "");
-                            e.dataTransfer.setData("text/plain", String(b.id));
+                            e.dataTransfer.effectAllowed = "copyMove";
+                            e.dataTransfer.setData("text/x-job-id", String(j.id));
+                            e.dataTransfer.setData("text/plain", String(j.id));
                           }}
-                          flashUnassign={flashUnassignId === b.id}
-                          onResize={(bookingId, nextStart, nextEnd) => handleResizeBooking(bookingId, nextStart, nextEnd)}
-                        />
-                      ))}
+                          title="モータープールの車両レーンへドラッグで割当"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="font-medium truncate">{j.title}</div>
+                            {classLabel && (
+                              <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-700">{classLabel}</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-600">
+                            {fmt(j.start)} - {fmt(j.end)}（{durMin}分）
+                          </div>
+                          <div className="text-xs text-slate-600">依頼元：{j.client?.name}</div>
+                          <div className="text-[11px] text-slate-500 mt-1">車両：{vehicleLabel}</div>
+                          <div className="text-[11px] text-slate-500">ドライバー：{driverLabel}</div>
+                          {j.amount != null && (
+                            <div className="text-[11px] text-slate-500">金額：{formatCurrency(j.amount)}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="text-[11px] text-slate-500 mt-2">※ 予約バーをここにドラッグするとジョブプールへ戻せます</div>
+              </div>
+            </div>
 
-                      <div className="absolute left-2 top-1 text-[11px] text-slate-500 bg-white/80 rounded px-1">{v.name}</div>
-                    </div>
-                  ))}
+            <div className="relative flex-1 min-w-0">
+              {hasPrevOvernight ? (
+                <button
+                  type="button"
+                  onClick={() => shiftViewDate(-1)}
+                  className="absolute left-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                  style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
+                  aria-label="前日の夜間予約へ移動"
+                  title="前日の夜間予約へ移動"
+                >
+                  ←前
+                </button>
+              ) : null}
+              {hasNextOvernight ? (
+                <button
+                  type="button"
+                  onClick={() => shiftViewDate(1)}
+                  className="absolute right-2 top-1/2 z-20 flex h-28 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white/90 text-sm font-semibold text-slate-700 shadow hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                  style={{ writingMode: "vertical-rl", textOrientation: "upright" }}
+                  aria-label="翌日の夜間予約へ移動"
+                  title="翌日の夜間予約へ移動"
+                >
+                  →翌
+                </button>
+              ) : null}
+              <div
+                ref={centerRef}
+                className={`w-full bg-white rounded-2xl shadow p-3 relative overflow-y-auto ${fullView ? "overflow-x-hidden" : "overflow-x-auto"}`}
+              >
+                <div className="flex items-center justify-between mb-2 sticky left-0 top-0 z-10 bg-white pr-2">
+                  <h2 className="font-medium">モータープール</h2>
+                  <span className="text-xs text-slate-500">00:00〜24:00（{pxPerMin.toFixed(2)} px/min）</span>
+                </div>
+
+                <div className="relative" style={{ width: CONTENT_WIDTH }}>
+                  <GridOverlay hourPx={60 * pxPerMin} />
+                  {currentTimePosition.visible ? (
+                    <div
+                      className="pointer-events-none absolute inset-y-0 w-[2px] bg-amber-500"
+                      style={{ left: 0, transform: `translateX(${currentTimePosition.x}px)` }}
+                    />
+                  ) : null}
+
+                  <div className="space-y-3 pt-6">
+                    {vehicles.map((v) => (
+                      <div
+                        key={v.id}
+                        data-vehicle-id={v.id}
+                        className="relative h-16 border rounded-xl bg-white overflow-hidden"
+                        onDragOver={handleLaneDragOver}
+                        onDragLeave={handleLaneDragLeave}
+                        onDrop={(e) => handleLaneDrop(v.id, e)}
+                      >
+                        {(appDutiesByVehicle.get(v.id) || []).map((a: any) => (
+                          <AppDutyBlock
+                            key={a.id}
+                            duty={a}
+                            pxPerMin={pxPerMin}
+                            viewDate={viewDate}
+                            driverLookup={driverMap}
+                            isOvernight={a.is_overnight}
+                            overnightFromPreviousDay={a.overnight_from_previous_day}
+                            overnightToNextDay={a.overnight_to_next_day}
+                            onClick={() => openDrawer({ type: "duty", data: a, vehicle: v })}
+                            isSelected={selected?.type === "duty" && selected?.id === a.id}
+                            onMoveDutyToVehicle={(dutyId, fromVehicleId, destVehicleId) =>
+                              moveDutyByPointer(dutyId, fromVehicleId, destVehicleId)
+                            }
+                            onDriverDrop={(dutyId, driverId) => assignDriverToAppDuty(dutyId, driverId)}
+                            onResize={(dutyId, nextStart, nextEnd) => handleResizeDuty(dutyId, nextStart, nextEnd)}
+                          />
+                        ))}
+                        {(bookingsByVehicle.get(v.id) || []).map((b: BoardBooking) => (
+                          <BookingBlock
+                            key={b.id}
+                            booking={b}
+                            pxPerMin={pxPerMin}
+                            viewDate={viewDate}
+                            driverLookup={driverMap}
+                            isOvernight={b.is_overnight}
+                            overnightFromPreviousDay={b.overnight_from_previous_day}
+                            overnightToNextDay={b.overnight_to_next_day}
+                            onClick={() => openDrawer({ type: "booking", data: b, vehicle: v })}
+                            isSelected={selected?.type === "booking" && selected?.id === b.id}
+                            resizable={isAppJob(b)}
+                            onDriverDrop={(bookingId: number, driverId: number) => {
+                              const cur = bookings.find((x) => x.id === bookingId);
+                              if (!cur) return;
+                              if (cur.driverId === driverId) return;
+                              if (cur.driverId != null && cur.driverId !== driverId) {
+                                const currentDriverName = driverMap.get(cur.driverId)?.name ?? "現在ドライバー";
+                                const incomingDriverName = driverMap.get(driverId)?.name ?? "新ドライバー";
+                                const ok =
+                                  typeof window === "undefined"
+                                    ? true
+                                    : window.confirm(`現在: ${currentDriverName} → 新: ${incomingDriverName} に変更しますか？`);
+                                if (!ok) return;
+                              }
+                              const cand: BoardBooking = { ...cur, driverId };
+                              if (hasDriverTimeConflict(bookings, cand)) {
+                                alert("同一ドライバーの時間重複のため割当できません");
+                                return;
+                              }
+                              setBookings((prev) => prev.map((x) => (x.id === bookingId ? { ...x, driverId } : x)));
+                            }}
+                            onMoveToVehicle={(bookingId, fromVehicleId, destVehicleId, originalDriverId) =>
+                              moveBookingByPointer(bookingId, fromVehicleId, destVehicleId, originalDriverId)
+                            }
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.effectAllowed = "move";
+                              e.dataTransfer.setData("text/x-booking-id", String(b.id));
+                              e.dataTransfer.setData("text/x-booking-move", String(b.id));
+                              e.dataTransfer.setData("text/x-from-vehicle-id", String(b.vehicleId));
+                              e.dataTransfer.setData("text/x-original-driver-id", b.driverId != null ? String(b.driverId) : "");
+                              e.dataTransfer.setData("text/plain", String(b.id));
+                            }}
+                            flashUnassign={flashUnassignId === b.id}
+                            onResize={(bookingId, nextStart, nextEnd) => handleResizeBooking(bookingId, nextStart, nextEnd)}
+                          />
+                        ))}
+
+                        <div className="absolute left-2 top-1 text-[11px] text-slate-500 bg-white/80 rounded px-1">{v.name}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-              </div>
             </div>
-          </div>
-        </div>
-
-        <div className="mt-3 flex items-stretch gap-0">
-          <button
-            type="button"
-            className="w-32 shrink-0 rounded-l-2xl bg-amber-500 px-4 text-lg font-semibold tracking-wide text-white shadow-md hover:bg-amber-500/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-            title="新しいジョブを登録"
-            onClick={openJobForm}
-          >
-            新規追加
-          </button>
-          <div
-            ref={jobPoolRef}
-            className="flex-1 bg-white rounded-r-2xl shadow-md p-3"
-            onDragOver={handleJobPoolDragOver}
-            onDragLeave={handleJobPoolDragLeave}
-            onDrop={handleJobPoolDrop}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="font-medium">ジョブプール（未割当）</h2>
-              <span className="text-xs text-slate-500">{jobPool.length} 件</span>
-            </div>
-            {jobPool.length === 0 ? (
-              <div className="text-slate-500 text-sm">未割当の仕事はありません。Excel風入力画面で登録するとここに表示されます。</div>
-            ) : (
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {jobPool.map((j) => {
-                  const durMin = Math.round((new Date(j.end).getTime() - new Date(j.start).getTime()) / 60000);
-                  const vehicle = j.vehicleId != null ? vehicleMap.get(j.vehicleId) ?? null : null;
-                  const driver = j.driverId != null ? driverMap.get(j.driverId) ?? null : null;
-                  const classLabel = j.preferClass ? VEHICLE_CLASS_LABELS[j.preferClass] ?? j.preferClass : "";
-                  const vehicleLabel = vehicle ? `${vehicle.name}` : classLabel ? `${classLabel}希望` : "車両未設定";
-                  const driverLabel = driver ? `${driver.name}（${driver.code}）` : "割当待ち";
-                  return (
-                    <div
-                      key={j.id}
-                      className="min-w-[240px] border rounded-xl p-2 hover:bg-slate-50 cursor-grab active:cursor-grabbing"
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.effectAllowed = "copyMove";
-                        e.dataTransfer.setData("text/x-job-id", String(j.id));
-                        e.dataTransfer.setData("text/plain", String(j.id));
-                      }}
-                      title="モータープールの車両レーンへドラッグで割当"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="font-medium truncate">{j.title}</div>
-                        {classLabel && (
-                          <span className="text-[10px] px-1 rounded bg-slate-100 text-slate-700">{classLabel}</span>
-                        )}
-                      </div>
-                      <div className="text-xs text-slate-600">
-                        {fmt(j.start)} - {fmt(j.end)}（{durMin}分）
-                      </div>
-                      <div className="text-xs text-slate-600">依頼元：{j.client?.name}</div>
-                      <div className="text-[11px] text-slate-500 mt-1">車両：{vehicleLabel}</div>
-                      <div className="text-[11px] text-slate-500">ドライバー：{driverLabel}</div>
-                      {j.amount != null && (
-                        <div className="text-[11px] text-slate-500">金額：{formatCurrency(j.amount)}</div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <div className="text-[11px] text-slate-500 mt-2">※ 予約バーをここにドラッグするとジョブプールへ戻せます</div>
           </div>
         </div>
 
@@ -1810,8 +1811,9 @@ export default function VehicleDispatchBoardMock({
           </section>
 
         </div>
+      </div>
 
-        {jobFormOpen && (
+      {jobFormOpen && (
           <JobFormModal
             draft={jobDraft}
             onClose={closeJobForm}
@@ -1823,7 +1825,7 @@ export default function VehicleDispatchBoardMock({
           />
         )}
 
-        {drawerOpen && (
+      {drawerOpen && (
           <Drawer isMobile={isMobile} onClose={closeDrawer}>
             <DetailsPane
               item={drawerItem}
