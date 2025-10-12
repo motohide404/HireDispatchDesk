@@ -28,6 +28,51 @@ const VEHICLE_CLASS_LABELS: Record<string, string> = {
   suv: "SUV",
   minibus: "マイクロバス"
 };
+
+const expiryDateFormatter = new Intl.DateTimeFormat("ja-JP", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit"
+});
+
+function formatExpiryDate(value?: string) {
+  if (!value) {
+    return "未設定";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return expiryDateFormatter.format(date);
+}
+
+function resolveExpiryStatus(dateString: string) {
+  const now = new Date();
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) {
+    return {
+      label: "未設定",
+      className: "bg-slate-100 text-slate-500 border border-slate-200"
+    };
+  }
+  const diffDays = Math.round((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) {
+    return {
+      label: `${formatExpiryDate(dateString)}（期限切れ）`,
+      className: "bg-rose-100 text-rose-700 border border-rose-200"
+    };
+  }
+  if (diffDays <= 30) {
+    return {
+      label: `${formatExpiryDate(dateString)}（残り${diffDays}日）`,
+      className: "bg-amber-100 text-amber-700 border border-amber-200"
+    };
+  }
+  return {
+    label: formatExpiryDate(dateString),
+    className: "bg-emerald-100 text-emerald-700 border border-emerald-200"
+  };
+}
 type DriverInfo = {
   id: number;
   name: string;
@@ -467,21 +512,6 @@ function clipIntervalToDay(startISO: string, endISO: string, dayStart: number, d
   return { start, end };
 }
 
-function mergeIntervals(intervals: Interval[]): Interval[] {
-  if (intervals.length === 0) return [];
-  const sorted = [...intervals].sort((a, b) => a.start - b.start);
-  const merged: Interval[] = [];
-  for (const interval of sorted) {
-    const last = merged[merged.length - 1];
-    if (!last || interval.start > last.end) {
-      merged.push({ ...interval });
-    } else {
-      last.end = Math.max(last.end, interval.end);
-    }
-  }
-  return merged;
-}
-
 type VehicleDispatchBoardMockProps = {
   drivers: DriverInfo[];
   vehicles: DispatchVehicle[];
@@ -544,40 +574,15 @@ export default function VehicleDispatchBoardMock({
     const weekday = viewDateObj.toLocaleDateString("ja-JP", { weekday: "short" });
     return `${base}（${weekday}）`;
   }, [viewDateObj]);
-  const driverDailySummaries = useMemo(() => {
-    const dayStart = viewDateObj.getTime();
-    if (!Number.isFinite(dayStart)) {
-      return drivers.map((driver) => ({
-        driver,
-        bookingCount: 0,
-        dutyCount: 0,
-        mergedIntervals: [] as Interval[],
-        busyMinutes: 0
-      }));
-    }
-    const dayEnd = dayStart + DAY_MS;
-    return drivers.map((driver) => {
-      const todaysBookings = bookings
-        .filter((b) => b.driverId === driver.id)
-        .map((b) => clipIntervalToDay(b.start, b.end, dayStart, dayEnd))
-        .filter((interval): interval is Interval => Boolean(interval));
-      const todaysDuties = appDuties
-        .filter((duty) => duty.driverId === driver.id)
-        .map((duty) => clipIntervalToDay(duty.start, duty.end, dayStart, dayEnd))
-        .filter((interval): interval is Interval => Boolean(interval));
-      const mergedIntervals = mergeIntervals([...todaysBookings, ...todaysDuties]);
-      const busyMinutes = Math.round(
-        mergedIntervals.reduce((acc, interval) => acc + (interval.end - interval.start) / 60000, 0)
-      );
-      return {
-        driver,
-        bookingCount: todaysBookings.length,
-        dutyCount: todaysDuties.length,
-        mergedIntervals,
-        busyMinutes
-      };
-    });
-  }, [appDuties, bookings, drivers, viewDateObj]);
+  const vehicleTableRows = useMemo(
+    () =>
+      vehicles.map((vehicle) => ({
+        vehicle,
+        shaken: resolveExpiryStatus(vehicle.shakenExpiry),
+        inspection: resolveExpiryStatus(vehicle.inspection3mExpiry)
+      })),
+    [vehicles]
+  );
   const dailyJobRows = useMemo(() => {
     const dayStart = viewDateObj.getTime();
     if (!Number.isFinite(dayStart)) {
@@ -1632,67 +1637,81 @@ export default function VehicleDispatchBoardMock({
         </div>
 
         <div className="mt-8 space-y-8">
-          <section id="driver-info" className="scroll-mt-24">
+          <section id="vehicle-info" className="scroll-mt-24">
             <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
               <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 px-5 py-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-800">ドライバー情報</h2>
-                  <p className="text-xs text-slate-500">{viewDateDisplay} の稼働サマリー</p>
+                  <h2 className="text-lg font-semibold text-slate-800">車両情報</h2>
+                  <p className="text-xs text-slate-500">車両台帳と同じ横レイアウトで確認できます</p>
                 </div>
                 <div className="text-right text-xs text-slate-500 space-y-1">
-                  <div>登録ドライバー {driverDailySummaries.length} 名</div>
+                  <div>登録車両 {vehicles.length} 台</div>
                   <div>今月の配車総数 {totalMonthlyJobs} 件</div>
                 </div>
               </div>
-              <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 xl:grid-cols-4">
-                {driverDailySummaries.map((summary) => {
-                  const { driver, bookingCount, dutyCount, mergedIntervals, busyMinutes } = summary;
-                  const totalAssignments = bookingCount + dutyCount;
-                  const statusLabel = totalAssignments > 0 ? "稼働中" : "待機";
-                  const firstInterval = mergedIntervals[0];
-                  const lastInterval = mergedIntervals[mergedIntervals.length - 1];
-                  const activeWindow = busyMinutes > 0 && firstInterval && lastInterval
-                    ? `${formatTimeInJst(firstInterval.start)}〜${formatTimeInJst(lastInterval.end)}`
-                    : null;
-                  return (
-                    <div
-                      key={driver.id}
-                      className="flex h-full flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50/40 p-4 shadow-sm"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-base font-semibold text-slate-800">{driver.name}</div>
-                          <div className="text-xs text-slate-500">{driver.code}</div>
-                        </div>
-                        <div className="text-right text-xs text-slate-500">
-                          <div className="inline-flex items-center justify-center rounded-full bg-slate-800/80 px-2 py-0.5 text-[11px] font-semibold text-white">
-                            第{driver.currentDispatchNumber}回</div>
-                          <div className="mt-1">今月 {driver.monthlyJobs} 件</div>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 text-xs text-slate-600">
-                        <div className="space-y-1">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-500">担当状況</div>
-                          <div className="text-sm font-semibold text-slate-800">{statusLabel}</div>
-                          <div>予約 {bookingCount} 件</div>
-                          <div>アプリ {dutyCount} 件</div>
-                        </div>
-                        <div className="space-y-1 text-right">
-                          <div className="text-[11px] uppercase tracking-wide text-slate-500">稼働時間</div>
-                          <div className="text-sm font-semibold text-slate-800">
-                            {busyMinutes > 0 ? formatMinutesLabel(busyMinutes) : "終日空き"}
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-sm text-slate-700">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th scope="col" className="px-4 py-3 text-left font-semibold">
+                        管理ID
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-left font-semibold">
+                        車両名 / VIN
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-left font-semibold">
+                        車両情報
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-left font-semibold">
+                        営業所
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-left font-semibold">
+                        車検満了日
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-left font-semibold">
+                        3ヶ月点検期限
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {vehicleTableRows.map(({ vehicle, shaken, inspection }) => (
+                      <tr key={vehicle.id} className="bg-white">
+                        <td className="px-4 py-3 font-medium text-slate-900">{vehicle.vehiclesId}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-semibold text-slate-900">{vehicle.name}</div>
+                          <div className="text-xs text-slate-500">VIN: {vehicle.vin}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="text-sm text-slate-700">{vehicle.plate}</div>
+                          <div className="text-xs text-slate-500">
+                            {VEHICLE_CLASS_LABELS[vehicle.class] ?? vehicle.class} / {vehicle.seats}名
                           </div>
-                          {activeWindow ? <div>{activeWindow}</div> : <div>次空き：終日</div>}
-                          <div>延長使用 {driver.extUsed}/7</div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                          {vehicle.maintenanceNotes ? (
+                            <div className="mt-1 text-xs text-slate-400">{vehicle.maintenanceNotes}</div>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-700">{vehicle.officeId}</td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${shaken.className}`}
+                          >
+                            {shaken.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${inspection.className}`}
+                          >
+                            {inspection.label}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </section>
-
           <section id="job-summary" className="scroll-mt-24">
             <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
               <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 px-5 py-4">
