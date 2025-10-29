@@ -55,7 +55,7 @@ function resolveExpiryStatus(dateString: string) {
       className: "bg-slate-100 text-slate-500 border border-slate-200"
     };
   }
-  const diffDays = Math.round((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const diffDays = Math.floor((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays < 0) {
     return {
       label: `${formatExpiryDate(dateString)}（期限切れ）`,
