@@ -10,7 +10,7 @@ import {
 } from "./data/drivers";
 import { createDispatchVehicles, vehicleLedger, vehicleMaintenanceRecords } from "./data/vehicles";
 
-type ActivePage = "dispatch" | "vehicles" | "drivers" | "partners";
+type ActivePage = "dispatch" | "vehicles" | "drivers" | "partners" | "invoices";
 
 type NavItem = {
   key: ActivePage;
@@ -38,6 +38,11 @@ const NAV_ITEMS: NavItem[] = [
     key: "partners",
     label: "取引先",
     description: "取引先・拠点・担当者の情報を管理します。"
+  },
+  {
+    key: "invoices",
+    label: "請求書",
+    description: "請求書作成画面（Excel風UI）を表示します。"
   }
 ];
 
@@ -153,6 +158,17 @@ export default function App() {
     );
   } else if (activePage === "partners") {
     pageContent = <PartnerLedgerPage />;
+  } else if (activePage === "invoices") {
+    pageContent = (
+      <section className="mx-auto flex w-full max-w-6xl px-6 py-8">
+        <div className="w-full rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
+          <h2 className="text-lg font-bold text-slate-900">請求書画面（準備中）</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            次のアクションでExcelライクな請求書画面を作り込みます。
+          </p>
+        </div>
+      </section>
+    );
   } else {
     pageContent = (
       <DriverLedgerPage
