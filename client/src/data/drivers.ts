@@ -491,6 +491,45 @@ export const driverLedger: DriverLedgerEntry[] = [
         uploadedAt: "2023-03-16"
       }
     ]
+  },
+  {
+    id: 16,
+    tenantId: "tenant-001",
+    officeId: "tokyo-hq",
+    code: "DRV-016",
+    name: "市橋 保幸",
+    nameKana: "イチハシ ヤスユキ",
+    birthDate: "1984-09-02",
+    address: "東京都品川区2-1-3",
+    phone: "080-2468-1357",
+    email: "ichihashi@example.com",
+    licenseClass: "大型二種",
+    licenseNumber: "Q778899001",
+    licenseExpiry: "2027-07-12",
+    employmentType: "正社員",
+    lastMedicalCheckAt: "2024-01-20",
+    medicalNotes: "聴力検査クリア",
+    alcoholCheckMethod: "アルコールチェッカー",
+    lastAlcoholCheckAt: today,
+    extUsageCountMonth: 1,
+    monthlyJobCount: 29,
+    currentDispatchNumber: 2,
+    status: "active",
+    documents: [
+      {
+        id: "doc-12",
+        type: "resume",
+        name: "履歴書",
+        uploadedAt: "2021-05-01"
+      },
+      {
+        id: "doc-13",
+        type: "license",
+        name: "運転免許証写し",
+        uploadedAt: "2023-07-15"
+      }
+    ],
+    notes: "都心のVIP送迎経験あり。"
   }
 ];
 
