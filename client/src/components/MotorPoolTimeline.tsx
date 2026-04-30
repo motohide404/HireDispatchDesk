@@ -10,7 +10,7 @@ type MotorPoolTimelineProps = {
 
 const MotorPoolTimeline = ({ lanes, reservations, jobs, drivers }: MotorPoolTimelineProps) => {
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-full flex flex-col overflow-hidden xl:max-h-[calc(100vh-240px)]">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-full flex flex-col overflow-hidden">
       <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-700">Motor Pool Timeline</h2>
