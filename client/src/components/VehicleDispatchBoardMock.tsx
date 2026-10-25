@@ -283,6 +283,7 @@ type UnassignedJob = {
   driverId: number | null;
   amount?: number;
   note?: string;
+  attachments?: BookingAttachment[];
 };
 
 const UNASSIGNED_JOBS: UnassignedJob[] = [
@@ -435,7 +436,8 @@ function bookingToJob(b: BoardBooking, vehicleLookup: Map<number, VehicleInfo>):
     vehicleId: null,
     driverId: null,
     amount: b.amount,
-    note: b.note
+    note: b.note,
+    attachments: b.attachments
   };
 }
 
@@ -1179,13 +1181,15 @@ export default function VehicleDispatchBoardMock({
     const baseBooking = {
       id: ++bookingIdRef.current,
       vehicleId,
-      driverId: null,
+      driverId: job.driverId ?? null,
       client: job.client,
       title: job.title,
       start: toJstIso(start),
       end: toJstIso(end),
       status: "warn" as const,
-      note: "ドライバー未割当（ジョブから配置：カード時刻にスナップ）"
+      note: job.note,
+      amount: job.amount,
+      attachments: job.attachments
     };
     const overnightMeta = computeOvernightInfo(baseBooking.start, baseBooking.end, viewDate);
     const newBooking: BoardBooking = { ...baseBooking, ...overnightMeta };
@@ -1195,6 +1199,16 @@ export default function VehicleDispatchBoardMock({
     }
     if (violatesAppDuty(newBooking, appDuties)) {
       alert("アプリ稼働と重複のため配置できません");
+      return;
+    }
+    if (
+      hasDriverTimeConflict(bookings, newBooking) ||
+      appDuties.some(
+        (duty) => duty.driverId != null && duty.driverId === newBooking.driverId &&
+          overlap(duty.start, duty.end, newBooking.start, newBooking.end)
+      )
+    ) {
+      alert("同一ドライバーの時間が重複しています");
       return;
     }
     const warn = bufferWarn(bookings, newBooking);
