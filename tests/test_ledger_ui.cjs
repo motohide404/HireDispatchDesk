@@ -70,7 +70,7 @@ async function setup({ existingPhoto = false, configureWorkspace } = {}) {
       const payload = JSON.parse(options.body);
       lastWorkspaceAttempt = payload;
       if (rejectWorkspaceWrites) return { ok: false, status: 503, json: async () => ({ error: 'テスト：仕事を保存できませんでした。' }) };
-      const result = spawnSync('python3', ['-c', "import sys,json;sys.path.insert(0,'tests');from test_validation import app;v=json.load(sys.stdin);app.validate(v['current']);app.preserve_duty_logs(v['previous'],v['current'])"], { input: JSON.stringify({ previous: remote.value, current: payload.value }), encoding: 'utf8' });
+      const result = spawnSync('python3', ['-c', "import sys,json;sys.path.insert(0,'tests');from test_validation import app;v=json.load(sys.stdin);app.validate(v['current']);app.preserve_duty_logs(v['previous'],v['current']);app.preserve_inspections(v['previous'],v['current'])"], { input: JSON.stringify({ previous: remote.value, current: payload.value }), encoding: 'utf8' });
       assert.equal(result.status, 0, result.stderr);
       assert.equal(payload.revision, remote.revision);
       remote = { revision: remote.revision + 1, value: payload.value };
@@ -532,6 +532,75 @@ test('partner tariffs retain distinct money units, support edits, and stay isola
 });
 
 const testManager = { id: 'test-manager', code: 'TEST-001', name: 'テスト運行管理者', role: 'manager', officeName: '東京営業所', active: true, appointmentDate: '2020-01-01', qualification: 'テスト用' };
+
+test('passenger daily inspection saves explicit results, review and correction with immutable originals', async () => {
+  await setup({ configureWorkspace: value => { value.staffMembers = [{ ...testManager, maintenanceManager: true, maintenanceAppointmentDate: '2020-01-01' }]; } });
+  try {
+    await click('日常点検');
+    await fill(field('点検する車両'), '11');
+    assert.equal(button('日常点検を記録').disabled, true);
+    await click('車両の点検方法を設定');
+    let form = one('form[aria-label="車両の点検方法"]');
+    await fill(field('確認する整備管理者', form), 'test-manager');
+    await fill(field('確認した資料・版・該当ページ', form), '確認用取扱説明書 2026版');
+    await fill(field('車両固有の点検方法（駐車ブレーキ・原動機等）', form), '確認用車両の手順');
+    await submit(form);
+    assert.equal(remote.value.inspectionProfiles.length, 1);
+    await click('日常点検を記録'); form = one('form[aria-label="日常点検の記録"]');
+    assert.equal(form.querySelectorAll('input[type="radio"]').length, 34);
+    assert.equal(form.querySelectorAll('input[type="radio"]:checked').length, 0);
+    assert.doesNotMatch(form.textContent, /エアブレーキ|エアタンク|排気ブレーキ/);
+    await fill(field('点検実施者', form), '1');
+    await fill(field('点検日時', form), '2026-11-14T06:00');
+    await fill(field('走行距離（km）', form), '123');
+    await fill(field('前回異常の確認内容（報告がなければ「前回報告なし」）', form), '前回報告なし');
+    await submit(form);
+    assert.match(form.textContent, /すべての点検結果/);
+    for (const radio of form.querySelectorAll('input[type="radio"][value="ok"]')) await act(async () => radio.click());
+    await submit(form);
+    assert.equal(remote.value.dailyInspections.length, 1);
+    const original = structuredClone(remote.value.dailyInspections[0]);
+    assert.match(document.body.textContent, /整備管理者の確認待ち/);
+    await click('整備管理者の確認'); form = one('form[aria-label="整備管理者の確認"]');
+    await fill(field('確認する整備管理者', form), 'test-manager');
+    await act(async () => one('input[type="radio"]', form).click());
+    await fill(field('確認内容・判断理由', form), '結果を確認して運行可');
+    await submit(form);
+    assert.equal(remote.value.inspectionReviews.length, 1);
+    await click('理由を付けて訂正・再点検'); form = one('form[aria-label="日常点検の記録"]');
+    await fill(field('走行距離（km）', form), '124');
+    await fill(field('訂正・再点検の理由', form), '距離の訂正');
+    await submit(form);
+    assert.equal(remote.value.dailyInspections.length, 2);
+    assert.deepEqual(remote.value.dailyInspections[0], original);
+    assert.equal(remote.value.dailyInspections[1].supersedes, original.id);
+    assert.match(document.body.textContent, /整備管理者の確認待ち/);
+    await reload(); await click('日常点検');
+    assert.match(document.body.textContent, /124 km/);
+    await click('詳細・履歴');
+    assert.match(one('[aria-label="日常点検の履歴"]').textContent, /距離の訂正/);
+  } finally { await unmount(); }
+});
+
+test('daily inspection failed saves retain exact record for a single retry', async () => {
+  await setup({ configureWorkspace: value => {
+    value.staffMembers = [{ ...testManager, maintenanceManager: true, maintenanceAppointmentDate: '2020-01-01' }];
+    value.inspectionProfiles = [{ id: 'profile-retry', vehicleId: 11, vehicleLabel: `${value.vehicles[0].name} / ${value.vehicles[0].plateNo}`, at: '2026-11-13T00:00:00Z', staffId: testManager.id, staffName: testManager.name, basis: '確認用資料', methods: '確認用手順', excluded: {} }];
+  } });
+  try {
+    await click('日常点検'); await fill(field('点検する車両'), '11'); await click('日常点検を記録');
+    const form = one('form[aria-label="日常点検の記録"]');
+    await fill(field('点検実施者', form), '1'); await fill(field('点検日時', form), '2026-11-14T06:00'); await fill(field('走行距離（km）', form), '100');
+    await fill(field('前回異常の確認内容（報告がなければ「前回報告なし」）', form), '前回報告なし');
+    for (const radio of form.querySelectorAll('input[type="radio"][value="ok"]')) await act(async () => radio.click());
+    rejectWorkspaceWrites = true; await submit(form);
+    const attempted = lastWorkspaceAttempt.value.dailyInspections[0];
+    assert.equal(field('走行距離（km）', form).value, '100');
+    rejectWorkspaceWrites = false; await submit(form);
+    assert.equal(remote.value.dailyInspections.length, 1);
+    assert.deepEqual(remote.value.dailyInspections[0], attempted);
+  } finally { await unmount(); }
+});
 async function chooseCheck(form, legend, value) {
   const group = [...form.querySelectorAll('fieldset')].find(element => element.querySelector(':scope > legend')?.textContent === legend);
   assert.ok(group, `Missing radio group ${legend}`);
