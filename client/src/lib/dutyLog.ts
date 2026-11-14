@@ -1,11 +1,16 @@
 export type RollCall = {
+  schemaVersion?: 2; executorStaffId?: string; executorRole?: string; executorOffice?: string; location?: string;
+  visualCheck?: 'yes' | 'no'; detectorCondition?: 'ok' | 'fault' | 'unchecked';
+  vehicleReport?: string; roadReport?: string; operationReport?: string;
+  handoverStatus?: 'none' | 'done' | 'not_done'; otherNotes?: string;
   at: string; executor: string; method: 'face' | 'phone' | 'other'; methodDetail: string;
   vehicleId: number; vehicleLabel: string; alcohol: 'none' | 'detected'; detectorUsed: 'yes' | 'no';
-  alcoholValue?: number; health: 'good' | 'concern'; fatigue: 'none' | 'concern'; sleep: 'enough' | 'insufficient';
-  inspection?: 'ok' | 'concern'; instructions: string; report: string; handover: string; response: string;
+  alcoholValue?: number; health?: 'good' | 'concern'; fatigue?: 'none' | 'concern'; sleep?: 'enough' | 'insufficient';
+  inspection?: 'ok' | 'concern' | 'not_done'; instructions: string; report: string; handover: string; response: string;
 };
 
 export type DutyLog = {
+  recorderStaffId?: string;
   id: string; dutyId: string; supersedes?: string; recordedAt: string; recorder: string; reason: string;
   driverId: number; driverName: string; driverCode: string; dutyDate: string;
   clockIn: string; clockOut?: string; note: string; before?: RollCall; after?: RollCall; voided: boolean;
@@ -25,7 +30,8 @@ export function latestDuties(records: DutyLog[]): DutyLog[] {
 
 export function needsAttention(call?: RollCall) {
   return !!call && (call.alcohol === 'detected' || (call.alcoholValue ?? 0) > 0 || call.detectorUsed === 'no' || call.health === 'concern'
-    || call.fatigue === 'concern' || call.sleep === 'insufficient' || call.inspection === 'concern');
+    || call.fatigue === 'concern' || call.sleep === 'insufficient' || call.inspection === 'concern' || call.inspection === 'not_done'
+    || call.visualCheck === 'no' || call.detectorCondition === 'fault' || call.detectorCondition === 'unchecked' || call.handoverStatus === 'not_done');
 }
 
 export function dutyError(record: DutyLog, records: DutyLog[], now = Date.now()): string {
@@ -39,6 +45,13 @@ export function dutyError(record: DutyLog, records: DutyLog[], now = Date.now())
     const call = record[phase];
     if (!call) continue;
     if (!call.executor.trim() || !call.vehicleId) return '点呼執行者と車両を指定してください。';
+    if (call.schemaVersion === 2) {
+      if (!call.executorStaffId || !call.location?.trim()) return '点呼執行者と点呼場所を指定してください。';
+      if (!call.visualCheck || !call.detectorCondition) return '目視・応答等の確認と検知器の状態を選択してください。';
+      if (phase === 'before' && !call.instructions.trim()) return '安全運行の指示事項を記録してください。';
+      if (phase === 'after' && (!call.vehicleReport?.trim() || !call.roadReport?.trim() || !call.operationReport?.trim() || !call.handoverStatus)) return '車両・道路・運行状況と交替運転者への通告を記録してください。';
+      if (phase === 'after' && call.handoverStatus !== 'none' && !call.handover.trim()) return '交替運転者への通告内容・未通告の理由を記録してください。';
+    }
     if (call.method !== 'face' && !call.methodDetail.trim()) return '対面以外の具体的方法・理由を記録してください。';
     const time = Date.parse(call.at);
     if (!Number.isFinite(time) || time < Date.parse(record.clockIn) || time > now + 300000
@@ -66,7 +79,7 @@ export function dutyCsv(records: DutyLog[], kind: 'attendance' | 'rollcall' | 'h
   const current = kind === 'history' ? records : latestDuties(records).filter(record => !record.voided);
   const headers = ['勤務ID', '記録ID', '訂正元ID', '勤務日', '運転者コード', '運転者', '出勤日時', '退勤日時', '記録者', '記録日時', '追記訂正理由', '取消', '勤務メモ'];
   const rows: unknown[][] = [];
-  if (kind !== 'attendance') headers.push('点呼区分', '点呼日時', '点呼執行者', '車両', '方法', '具体的方法・理由', '酒気帯び', '検知器使用', '測定値mg/L', '疾病等', '疲労', '睡眠不足', '日常点検', '指示事項', '道路・運行状況の報告', '交替運転者への通告', '対応内容');
+  if (kind !== 'attendance') headers.push('点呼区分', '点呼日時', '点呼執行者', '車両', '方法', '具体的方法・理由', '酒気帯び', '検知器使用', '測定値mg/L', '疾病等', '疲労', '睡眠不足', '日常点検', '指示事項', '道路・運行状況の報告', '交替運転者への通告', '対応内容', '執行者職員ID', '執行者役割', '所属営業所', '点呼場所', '目視応答等の確認', '検知器状態', '車両の状況', '道路の状況', '運行の状況', '通告区分', 'その他必要事項');
   for (const record of current) {
     const base = [record.dutyId, record.id, record.supersedes, record.dutyDate, record.driverCode, record.driverName, displayTime(record.clockIn), record.clockOut ? displayTime(record.clockOut) : '', record.recorder, displayTime(record.recordedAt), record.reason, record.voided ? '取消' : '', record.note];
     if (kind === 'attendance') { rows.push(base); continue; }
@@ -75,8 +88,11 @@ export function dutyCsv(records: DutyLog[], kind: 'attendance' | 'rollcall' | 'h
       const call = record[phase]; if (!call) continue;
       rows.push([...base, phase === 'before' ? '乗務前' : '乗務後', displayTime(call.at), call.executor, call.vehicleLabel, methodNames[call.method], call.methodDetail,
         call.alcohol === 'none' ? '無' : '有', call.detectorUsed === 'yes' ? '使用' : '未使用', call.alcoholValue,
-        call.health === 'good' ? '問題なし' : '確認事項あり', call.fatigue === 'none' ? 'なし' : 'あり', call.sleep === 'enough' ? 'なし' : 'あり',
-        call.inspection === 'ok' ? '実施・異常なし' : call.inspection === 'concern' ? '確認事項あり' : '', call.instructions, call.report, call.handover, call.response]);
+        call.health ? call.health === 'good' ? '問題なし' : '確認事項あり' : '', call.fatigue ? call.fatigue === 'none' ? 'なし' : 'あり' : '', call.sleep ? call.sleep === 'enough' ? 'なし' : 'あり' : '',
+        call.inspection === 'ok' ? '実施・異常なし' : call.inspection === 'concern' ? '確認事項あり' : call.inspection === 'not_done' ? '未実施' : '', call.instructions, call.report, call.handover, call.response,
+        call.executorStaffId, call.executorRole, call.executorOffice, call.location, call.visualCheck === 'yes' ? '確認' : call.visualCheck === 'no' ? '未確認' : '',
+        call.detectorCondition === 'ok' ? '正常' : call.detectorCondition === 'fault' ? '故障' : call.detectorCondition === 'unchecked' ? '未確認' : '',
+        call.vehicleReport, call.roadReport, call.operationReport, call.handoverStatus === 'none' ? '交替なし' : call.handoverStatus === 'done' ? '通告済' : call.handoverStatus === 'not_done' ? '未通告' : '', call.otherNotes]);
       added = true;
     }
     if (!added && kind === 'history') rows.push(base);

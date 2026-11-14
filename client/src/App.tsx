@@ -6,6 +6,7 @@ import DriverLedgerPage from "./components/DriverLedgerPage";
 import PartnerLedgerPage from "./components/PartnerLedgerPage";
 import JobEntryPage from "./components/JobEntryPage";
 import DutyLogPage from "./components/DutyLogPage";
+import StaffLedgerPage from "./components/StaffLedgerPage";
 import { createJobRow, hasJobInput, type JobEntryRow, type NewWorkJob } from "./lib/jobEntry";
 import { todayInJapan } from "./lib/ledger";
 import { partnerLedger, type PartnerRecord, type PartnerOffice, type PartnerContact } from './data/partners';
@@ -16,7 +17,7 @@ import {
 } from "./data/drivers";
 import { createDispatchVehicles, vehicleLedger, vehicleMaintenanceRecords } from "./data/vehicles";
 
-type ActivePage = "dispatch" | "jobs" | "duties" | "vehicles" | "drivers" | "partners" | "invoices";
+type ActivePage = "dispatch" | "jobs" | "duties" | "staff" | "vehicles" | "drivers" | "partners" | "invoices";
 
 type NavItem = {
   key: ActivePage;
@@ -26,6 +27,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { key: 'duties', label: '点呼・出勤簿', description: '勤務ごとの出退勤と点呼を記録し、履歴を残します。' },
+  { key: 'staff', label: '職員台帳', description: '運行管理者・補助者・事務員を登録します。' },
   {
     key: "dispatch",
     label: "配車ボード",
@@ -195,7 +197,7 @@ export default function App() {
         onDateChange={setDispatchDate}
       />
     );
-  } else if (activePage === "jobs" || activePage === "duties") {
+  } else if (activePage === "jobs" || activePage === "duties" || activePage === "staff") {
     pageContent = <></>;
   } else if (activePage === "vehicles") {
     pageContent = (
@@ -265,6 +267,7 @@ export default function App() {
       <main className="flex-1">
         {pageContent}
         <div hidden={activePage !== 'duties'}><DutyLogPage drivers={drivers} vehicles={vehicles} /></div>
+        <div hidden={activePage !== 'staff'}><StaffLedgerPage /></div>
         <div hidden={activePage !== 'jobs'}>
           <JobEntryPage rows={jobRows} onRowsChange={setJobRows} date={entryDate} onDateChange={setEntryDate}
             drivers={drivers} vehicles={vehicles} customers={customers} onRegister={registerJobs} registering={registeringJobs}

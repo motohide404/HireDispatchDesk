@@ -70,7 +70,7 @@ async function setup({ existingPhoto = false, configureWorkspace } = {}) {
       const payload = JSON.parse(options.body);
       lastWorkspaceAttempt = payload;
       if (rejectWorkspaceWrites) return { ok: false, status: 503, json: async () => ({ error: 'テスト：仕事を保存できませんでした。' }) };
-      const result = spawnSync('python3', ['-c', "import sys,json;sys.path.insert(0,'tests');from test_validation import app;app.validate(json.load(sys.stdin))"], { input: JSON.stringify(payload.value), encoding: 'utf8' });
+      const result = spawnSync('python3', ['-c', "import sys,json;sys.path.insert(0,'tests');from test_validation import app;v=json.load(sys.stdin);app.validate(v['current']);app.preserve_duty_logs(v['previous'],v['current'])"], { input: JSON.stringify({ previous: remote.value, current: payload.value }), encoding: 'utf8' });
       assert.equal(result.status, 0, result.stderr);
       assert.equal(payload.revision, remote.revision);
       remote = { revision: remote.revision + 1, value: payload.value };
@@ -531,43 +531,74 @@ test('partner tariffs retain distinct money units, support edits, and stay isola
   } finally { await unmount(); }
 });
 
+const testManager = { id: 'test-manager', code: 'TEST-001', name: 'テスト運行管理者', role: 'manager', officeName: '東京営業所', active: true, appointmentDate: '2020-01-01', qualification: 'テスト用' };
+async function chooseCheck(form, legend, value) {
+  const group = [...form.querySelectorAll('fieldset')].find(element => element.querySelector(':scope > legend')?.textContent === legend);
+  assert.ok(group, `Missing radio group ${legend}`);
+  await act(async () => one(`input[type="radio"][value="${value}"]`, group).click());
+}
+
 // Attendance and roll calls share a duty ID, but never fabricate each other's times.
 test('duty ledger saves overnight attendance, linked rollcalls, corrections and survives reload', async () => {
-  await setup(); await click('点呼・出勤簿'); await click('出勤を記録');
+  await setup({ configureWorkspace: value => { value.staffMembers = [testManager]; } }); await click('点呼・出勤簿'); await click('出勤を記録');
   let form = one('form[aria-label="出退勤の記録"]');
-  await fill(field('運転者', form), '1'); await fill(field('今回の記録者名', form), 'テスト記録者');
+  await fill(field('運転者', form), '1'); await fill(field('記録担当者', form), 'test-manager');
   await fill(field('出勤日時（日本時間）', form), '2026-11-12T22:00'); await fill(field('退勤日時（未退勤は空欄）', form), '2026-11-13T06:00');
   await submit(form); assert.equal(remote.value.dutyLogs.length, 1);
   const original = structuredClone(remote.value.dutyLogs[0]); assert.equal(original.clockIn, '2026-11-12T22:00:00+09:00'); assert.equal(original.before, undefined);
   await click('乗務前を記録'); form = one('form[aria-label="乗務前点呼の記録"]');
-  await fill(field('今回の記録者名', form), 'テスト記録者'); await fill(field('今回の点呼執行者名', form), 'テスト点呼者');
+  await fill(field('点呼執行者（運行管理者・補助者）', form), 'test-manager'); await fill(field('点呼場所', form), '東京営業所');
   await fill(field('点呼日時（日本時間）', form), '2026-11-12T22:10'); await fill(field('車両', form), '11');
-  for (const [label, value] of [['点呼方法', 'face'], ['酒気帯びの有無', 'none'], ['アルコール検知器', 'yes'], ['疾病等の状況', 'good'], ['疲労', 'none'], ['睡眠不足', 'enough'], ['日常点検', 'ok']]) await fill(field(label, form), value);
+  await fill(field('点呼方法', form), 'face');
+  assert.equal(one('input[inputmode="decimal"]', form).type, 'text');
+  assert.equal(form.querySelectorAll('input[type="radio"]:checked').length, 0);
+  for (const [label, value] of [['酒気帯びの有無', 'none'], ['アルコール検知器', 'yes'], ['疾病等の状況', 'good'], ['疲労', 'none'], ['睡眠不足', 'enough'], ['日常点検', 'ok'], ['目視・応答等の確認', 'yes'], ['検知器の状態', 'ok']]) await chooseCheck(form, label, value);
+  await chooseCheck(form, '酒気帯びの有無', 'detected');
+  await chooseCheck(form, '酒気帯びの有無', 'none');
+  await fill(field('測定値（mg/L・任意）', form), '0.000');
   await fill(field('指示事項', form), '安全確認'); await fill(field('今回の追記・訂正・取消の理由', form), '乗務前点呼を追記');
   await submit(form); assert.equal(remote.value.dutyLogs.length, 2); assert.deepEqual(remote.value.dutyLogs[0], original);
   assert.equal(remote.value.dutyLogs[1].dutyId, original.dutyId); assert.equal(remote.value.dutyLogs[1].clockIn, original.clockIn);
-  assert.equal(remote.value.dutyLogs[1].before.alcoholValue, undefined);
+  assert.equal(remote.value.dutyLogs[1].before.alcoholValue, 0);
   await reload(); await click('点呼・出勤簿'); await fill(field('勤務日（出勤日）'), '2026-11-12');
-  await click('詳細・履歴'); assert.match(one('[aria-label="勤務の詳細・訂正履歴"]').textContent, /テスト点呼者/);
+  await click('詳細・履歴'); assert.match(one('[aria-label="勤務の詳細・訂正履歴"]').textContent, /テスト運行管理者/);
   await click('閉じる', one('[aria-label="勤務の詳細・訂正履歴"]'));
   await click('出退勤・訂正'); form = one('form[aria-label="出退勤の記録"]');
-  await fill(field('今回の記録者名', form), '訂正担当'); await fill(field('退勤日時（未退勤は空欄）', form), '2026-11-13T06:15');
+  await fill(field('記録担当者', form), 'test-manager'); await fill(field('退勤日時（未退勤は空欄）', form), '2026-11-13T06:15');
   await fill(field('今回の追記・訂正・取消の理由', form), '退勤時刻の訂正'); await submit(form);
   assert.equal(remote.value.dutyLogs.length, 3); assert.deepEqual(remote.value.dutyLogs[0], original);
-  assert.equal(remote.value.dutyLogs[2].before.executor, 'テスト点呼者'); assert.equal(remote.value.dutyLogs[2].clockOut, '2026-11-13T06:15:00+09:00');
+  assert.equal(remote.value.dutyLogs[2].before.executor, 'テスト運行管理者'); assert.equal(remote.value.dutyLogs[2].clockOut, '2026-11-13T06:15:00+09:00');
   await unmount();
 });
 
 test('failed attendance saves keep inputs and retry the same record without duplication', async () => {
-  await setup(); await click('点呼・出勤簿'); await click('出勤を記録');
+  await setup({ configureWorkspace: value => { value.staffMembers = [testManager]; } }); await click('点呼・出勤簿'); await click('出勤を記録');
   const form = one('form[aria-label="出退勤の記録"]');
-  await fill(field('運転者', form), '1'); await fill(field('今回の記録者名', form), 'テスト担当');
+  await fill(field('運転者', form), '1'); await fill(field('記録担当者', form), 'test-manager');
   await fill(field('出勤日時（日本時間）', form), '2026-11-12T22:00');
   rejectWorkspaceWrites = true; await submit(form);
   assert.equal(remote.value.dutyLogs, undefined); assert.match(form.textContent, /再試行/);
-  assert.equal(field('今回の記録者名', form).value, 'テスト担当');
+  assert.equal(field('記録担当者', form).value, 'test-manager');
   const pendingId = lastWorkspaceAttempt.value.dutyLogs[0].id;
   rejectWorkspaceWrites = false; await submit(form);
   assert.equal(remote.value.dutyLogs.length, 1); assert.equal(remote.value.dutyLogs[0].id, pendingId);
   await unmount();
+});
+
+test('staff ledger registers managers, persists edits, and keeps office staff out of executor selection', async () => {
+  await setup(); await click('職員台帳'); await click('職員を登録');
+  let form = one('form[aria-label="職員の登録・編集"]');
+  await fill(field('職員コード', form), 'M-1'); await fill(field('職員氏名', form), '登録テスト管理者');
+  await fill(field('所属営業所', form), 'テスト営業所'); await fill(field('職員の役割', form), 'manager');
+  await fill(field('選任日', form), '2020-01-01'); await submit(form);
+  assert.equal(remote.value.staffMembers.length, 1); assert.equal(remote.value.staffMembers[0].role, 'manager');
+  await reload(); await click('職員台帳'); assert.match(document.body.textContent, /登録テスト管理者/);
+  await click('職員情報を編集'); form = one('form[aria-label="職員の登録・編集"]');
+  await fill(field('職員氏名', form), '改名後の管理者'); await submit(form);
+  assert.equal(remote.value.staffMembers[0].name, '改名後の管理者');
+  await click('職員を登録'); form = one('form[aria-label="職員の登録・編集"]');
+  await fill(field('職員コード', form), 'C-1'); await fill(field('職員氏名', form), 'テスト事務員'); await fill(field('所属営業所', form), 'テスト営業所'); await submit(form);
+  await click('点呼・出勤簿'); await click('出勤を記録'); form = one('form[aria-label="出退勤の記録"]');
+  assert.equal(field('記録担当者', form).options.length, 3);
+  await click('閉じる', form); await unmount();
 });

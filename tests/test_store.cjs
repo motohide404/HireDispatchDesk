@@ -117,3 +117,22 @@ test('a conflicting batch never overwrites another editor and keeps local work a
   assert.equal(store.usePersistentState('jobPool', [])[0][0].id, 'sheet-4');
   assert.equal(store.hasUnsavedChanges(), true);
 });
+
+test('staff registration initializes legacy workspaces and edits preserve record snapshots', async () => {
+  const { store, remote } = setup({ drivers: [], dutyLogs: [{ id: 'old', recorder: '旧氏名' }] });
+  await store.initializeStore({});
+  const member = { id: 'staff', name: '登録氏名', code: 'M1', active: true };
+  await store.saveStaffMember(member); assert.equal(remote.value.staffMembers.length, 1);
+  await store.saveStaffMember({ ...member, name: '改名後' }, member);
+  assert.equal(remote.value.staffMembers[0].name, '改名後'); assert.equal(remote.value.dutyLogs[0].recorder, '旧氏名');
+  await assert.rejects(store.saveStaffMember({ ...member, name: '古い画面の編集' }, member), /最新/);
+});
+
+test('staff save retry reconciles a lost response and does not create a duplicate member', async () => {
+  const { store, remote, context } = setup({ drivers: [] }); await store.initializeStore({});
+  const originalFetch = context.fetch;
+  context.fetch = async (path, options = {}) => { const response = await originalFetch(path, options); if (options.method === 'PUT') throw new Error('response lost'); return response; };
+  const member = { id: 'staff', name: 'テスト', code: 'M1', active: true };
+  await store.saveStaffMember(member); assert.equal(remote.value.staffMembers.length, 1); assert.equal(remote.writes, 1);
+  assert.equal(store.hasUnsavedChanges(), false);
+});

@@ -212,6 +212,22 @@ def duty_timestamp(value, label, japan=True):
     return parsed
 
 
+def validate_staff_members(value):
+    codes = set()
+    for member in value.get('staffMembers', []):
+        for key, label in (('id', '職員ID'), ('code', '職員コード'), ('name', '職員氏名'), ('officeName', '所属営業所')):
+            ledger_text(member.get(key), 200, label, required=True)
+        if member['code'].strip() in codes:
+            raise ValueError('職員コードが重複しています。')
+        codes.add(member['code'].strip())
+        if member.get('role') not in ('manager', 'assistant', 'office') or type(member.get('active')) is not bool:
+            raise ValueError('職員の役割・在籍区分を確認してください。')
+        appointed = ledger_date(member.get('appointmentDate'))
+        if member['role'] != 'office' and appointed is None:
+            raise ValueError('点呼担当者の選任日を入力してください。')
+        ledger_text(member.get('qualification'), 200, '資格・講習の確認メモ')
+
+
 def validate_duty_logs(value):
     records = value.get('dutyLogs', [])
     drivers = {row['id'] for row in value['drivers']}
@@ -221,6 +237,7 @@ def validate_duty_logs(value):
         for key in ('id', 'dutyId'):
             ledger_text(record.get(key), 100, '勤務記録ID', required=True)
         ledger_text(record.get('recorder'), 200, '記録者', required=True)
+        ledger_text(record.get('recorderStaffId'), 200, '記録担当職員ID')
         ledger_text(record.get('driverName'), 200, '運転者名', required=True)
         ledger_text(record.get('driverCode'), 200, '運転者コード', required=True)
         ledger_text(record.get('reason'), 2000, '追記訂正理由')
@@ -252,6 +269,9 @@ def validate_duty_logs(value):
                 continue
             if not isinstance(call, dict):
                 raise ValueError('点呼の記録形式を確認してください。')
+            version = call.get('schemaVersion')
+            if version is not None and (type(version) is not int or version != 2):
+                raise ValueError('点呼記録の版を確認してください。')
             at = duty_timestamp(call.get('at'), '点呼日時')
             if at < start or (end is not None and at > end):
                 raise ValueError('点呼日時は出勤から退勤の間にしてください。')
@@ -264,12 +284,31 @@ def validate_duty_logs(value):
             for key in ('methodDetail', 'instructions', 'report', 'handover', 'response'):
                 ledger_text(call.get(key), 2000, '点呼の記録内容')
             for key, options in {'method': ('face', 'phone', 'other'), 'alcohol': ('none', 'detected'),
-                                 'detectorUsed': ('yes', 'no'), 'health': ('good', 'concern'),
-                                 'fatigue': ('none', 'concern'), 'sleep': ('enough', 'insufficient')}.items():
+                                 'detectorUsed': ('yes', 'no')}.items():
                 if call.get(key) not in options:
                     raise ValueError('点呼の確認項目をすべて選択してください。')
-            if phase == 'before' and call.get('inspection') not in ('ok', 'concern'):
+            if phase == 'before' or version != 2:
+                for key, options in {'health': ('good', 'concern'), 'fatigue': ('none', 'concern'), 'sleep': ('enough', 'insufficient')}.items():
+                    if call.get(key) not in options:
+                        raise ValueError('疾病・疲労・睡眠不足の状況を選択してください。')
+            if phase == 'before' and call.get('inspection') not in (('ok', 'concern', 'not_done') if version == 2 else ('ok', 'concern')):
                 raise ValueError('日常点検の状況を選択してください。')
+            if version == 2:
+                for key, label in (('executorStaffId', '点呼担当職員ID'), ('executorOffice', '点呼担当の営業所'), ('location', '点呼場所')):
+                    ledger_text(call.get(key), 200, label, required=True)
+                if call.get('executorRole') not in ('manager', 'assistant'):
+                    raise ValueError('点呼は運行管理者または選任された補助者を指定してください。')
+                for key in ('vehicleReport', 'roadReport', 'operationReport', 'otherNotes'):
+                    ledger_text(call.get(key), 2000, '点呼報告・その他事項', required=phase == 'after' and key != 'otherNotes')
+                if call.get('visualCheck') not in ('yes', 'no') or call.get('detectorCondition') not in ('ok', 'fault', 'unchecked'):
+                    raise ValueError('目視・応答等の確認と検知器の状態を記録してください。')
+                if phase == 'before':
+                    ledger_text(call.get('instructions'), 2000, '指示事項', required=True)
+                else:
+                    if call.get('handoverStatus') not in ('none', 'done', 'not_done'):
+                        raise ValueError('交替運転者への通告状況を選択してください。')
+                    if call['handoverStatus'] != 'none':
+                        ledger_text(call.get('handover'), 2000, '通告内容・未通告の理由', required=True)
             if call['method'] != 'face':
                 ledger_text(call.get('methodDetail'), 2000, '対面以外の具体的方法・理由', required=True)
             amount = call.get('alcoholValue')
@@ -279,7 +318,7 @@ def validate_duty_logs(value):
                 number = Decimal(str(amount))
                 if not number.is_finite() or number < 0 or number > 10 or number * 1000 != (number * 1000).to_integral_value():
                     raise ValueError('アルコール測定値は0〜10 mg/L、小数3桁以内で入力してください。')
-            attention = call['alcohol'] == 'detected' or (amount is not None and amount > 0) or call['detectorUsed'] == 'no' or call['health'] == 'concern' or call['fatigue'] == 'concern' or call['sleep'] == 'insufficient' or call.get('inspection') == 'concern'
+            attention = call['alcohol'] == 'detected' or (amount is not None and amount > 0) or call['detectorUsed'] == 'no' or call.get('health') == 'concern' or call.get('fatigue') == 'concern' or call.get('sleep') == 'insufficient' or call.get('inspection') in ('concern', 'not_done') or call.get('visualCheck') == 'no' or call.get('detectorCondition') in ('fault', 'unchecked') or call.get('handoverStatus') == 'not_done'
             if attention:
                 ledger_text(call.get('response'), 2000, '確認事項への対応内容', required=True)
     active = [seen[identifier] for identifier in latest.values() if not seen[identifier]['voided']]
@@ -300,17 +339,40 @@ def preserve_duty_logs(previous, current):
     if new[:len(old)] != old:
         raise ValueError('保存済みの点呼・出勤記録は変更・削除できません。理由を付けて追記・訂正してください。')
     previous_ids = {row['id'] for row in old}
+    old_by_id = {row['id']: row for row in old}
+    staff = {row['id']: row for row in current.get('staffMembers', [])}
+    for row in new:
+        references = [row.get('recorderStaffId')] + [(row.get(phase) or {}).get('executorStaffId') for phase in ('before', 'after')]
+        if any(identifier and identifier not in staff for identifier in references):
+            raise ValueError('記録に使われた職員は削除できません。在籍・利用状態を変更してください。')
     now = time.time() + 300
     for row in new:
         if row['id'] in previous_ids:
             continue
-        for value in (row['clockIn'], row.get('clockOut'), row.get('before', {}).get('at'), row.get('after', {}).get('at'), row['recordedAt']):
+        recorder = staff.get(row.get('recorderStaffId'))
+        if not recorder or not recorder['active'] or row['recorder'] != recorder['name']:
+            raise ValueError('職員台帳から記録担当者を選択してください。旧画面は再読み込みしてください。')
+        original = old_by_id.get(row.get('supersedes'), {})
+        for phase in ('before', 'after'):
+            call = row.get(phase)
+            if original.get(phase) and not call:
+                raise ValueError('保存済みの点呼は消去できません。訂正または勤務の取消として記録してください。')
+            if not call or call == original.get(phase):
+                continue
+            executor = staff.get(call.get('executorStaffId'))
+            if call.get('schemaVersion') != 2 or not executor or not executor['active'] or executor['role'] not in ('manager', 'assistant'):
+                raise ValueError('点呼執行者を職員台帳の運行管理者・補助者から選択してください。')
+            if executor['name'] != call['executor'] or executor['role'] != call.get('executorRole') or executor['officeName'] != call.get('executorOffice'):
+                raise ValueError('点呼執行者の情報が職員台帳と一致しません。選択し直してください。')
+            if ledger_date(executor['appointmentDate']) > duty_timestamp(call['at'], '点呼日時').date():
+                raise ValueError('点呼執行者の選任日より前の点呼は記録できません。')
+        for value in (row['clockIn'], row.get('clockOut'), (row.get('before') or {}).get('at'), (row.get('after') or {}).get('at'), row['recordedAt']):
             if value and duty_timestamp(value, '実績日時', japan=False).timestamp() > now:
                 raise ValueError('実際に実施した日時を入力してください。未来の実績は保存できません。')
 
 
 def validate(value):
-    if not isinstance(value, dict) or not ALLOWED.issubset(value) or set(value) - ALLOWED - {'dutyLogs'}:
+    if not isinstance(value, dict) or not ALLOWED.issubset(value) or set(value) - ALLOWED - {'dutyLogs', 'staffMembers'}:
         raise ValueError('保存データの形式が正しくありません。')
     for key in set(value) - {'officeOrder'}:
         if not isinstance(value[key], list) or len(value[key]) > 10000:
@@ -325,6 +387,7 @@ def validate(value):
     if not isinstance(value['officeOrder'], dict):
         raise ValueError('拠点の並び順が正しくありません。')
     validate_ledgers(value)
+    validate_staff_members(value)
     validate_duty_logs(value)
     vehicles = {row['id'] for row in value['vehicles']}
     drivers = {row['id'] for row in value['drivers']}
