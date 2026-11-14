@@ -10,7 +10,7 @@ import os
 import re
 import secrets
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -226,6 +226,138 @@ def validate_staff_members(value):
         if member['role'] != 'office' and appointed is None:
             raise ValueError('点呼担当者の選任日を入力してください。')
         ledger_text(member.get('qualification'), 200, '資格・講習の確認メモ')
+        if type(member.get('maintenanceManager', False)) is not bool:
+            raise ValueError('整備管理者の選任区分を確認してください。')
+        maintenance_date = ledger_date(member.get('maintenanceAppointmentDate'))
+        if member.get('maintenanceManager') and maintenance_date is None:
+            raise ValueError('整備管理者の選任日を入力してください。')
+
+
+INSPECTION_KEYS = {'BR01', 'BR02', 'BR05', 'TY01', 'TY02', 'TY03', 'TY04', 'BA01',
+                   'EN01', 'EN02', 'EN03', 'EN04', 'EN05', 'LI01', 'WW01', 'WW02', 'PR01'}
+INSPECTION_COLLECTIONS = ('inspectionProfiles', 'dailyInspections', 'inspectionReviews')
+
+
+def validate_inspections(value):
+    vehicles = {row['id'] for row in value['vehicles']}
+    drivers = {row['id'] for row in value['drivers']}
+    profiles = {}
+    for row in value.get('inspectionProfiles', []):
+        if type(row.get('vehicleId')) is not int or row['vehicleId'] not in vehicles:
+            raise ValueError('点検対象の車両を確認してください。')
+        for key in ('id', 'vehicleLabel', 'staffId', 'staffName'):
+            ledger_text(row.get(key), 200, '点検方法の登録情報', required=True)
+        for key in ('basis', 'methods'):
+            ledger_text(row.get(key), 2000, '車両資料・点検方法', required=True)
+        duty_timestamp(row.get('at'), '点検方法の確認日時', japan=False)
+        excluded = row.get('excluded')
+        if not isinstance(excluded, dict) or set(excluded) - {'BA01', 'EN01', 'EN02', 'EN03'}:
+            raise ValueError('対象外にできるのは構造上該当しない装置だけです。')
+        for reason in excluded.values():
+            ledger_text(reason, 200, '対象外の根拠', required=True)
+        profiles[row['id']] = row
+    records, latest = {}, {}
+    for row in value.get('dailyInspections', []):
+        for key in ('id', 'inspectionId', 'vehicleLabel', 'driverName', 'profileId'):
+            ledger_text(row.get(key), 200, '日常点検の登録情報', required=True)
+        if type(row.get('vehicleId')) is not int or row['vehicleId'] not in vehicles or type(row.get('driverId')) is not int or row['driverId'] not in drivers:
+            raise ValueError('日常点検の車両・運転者を確認してください。')
+        profile = profiles.get(row['profileId'])
+        if not profile or profile['vehicleId'] != row['vehicleId']:
+            raise ValueError('車両の点検方法を先に設定してください。')
+        at = duty_timestamp(row.get('at'), '日常点検日時')
+        saved = duty_timestamp(row.get('recordedAt'), '日常点検の記録日時', japan=False)
+        if at > saved or type(row.get('odometer')) is not int or not 0 <= row['odometer'] <= 999999999:
+            raise ValueError('点検日時・走行距離を確認してください。')
+        results = row.get('results')
+        if not isinstance(results, dict) or set(results) != INSPECTION_KEYS - set(profile['excluded']) or any(result not in ('ok', 'defect') for result in results.values()):
+            raise ValueError('すべての点検結果を明示してください。未確認は正常として保存できません。')
+        ledger_text(row.get('previousIssues'), 2000, '前回異常の確認内容', required=True)
+        ledger_text(row.get('notes'), 2000, '異常・措置内容', required='defect' in results.values())
+        previous = row.get('supersedes')
+        ledger_text(row.get('reason'), 2000, '訂正・再点検の理由', required=bool(previous))
+        if previous:
+            original = records.get(previous)
+            if not original or latest.get(row['inspectionId']) != previous or any(original[key] != row[key] for key in ('inspectionId', 'vehicleId', 'driverId', 'driverName', 'vehicleLabel', 'profileId')):
+                raise ValueError('最新の日常点検記録に理由を付けて追記してください。')
+            if saved < duty_timestamp(original['recordedAt'], '元記録日時', japan=False):
+                raise ValueError('訂正の記録日時を確認してください。')
+        elif row['inspectionId'] in latest:
+            raise ValueError('点検IDが重複しています。')
+        records[row['id']] = row
+        latest[row['inspectionId']] = row['id']
+    review_times = {}
+    for row in value.get('inspectionReviews', []):
+        if row.get('inspectionId') not in records or row.get('decision') not in ('allow', 'deny'):
+            raise ValueError('整備管理者の確認対象・運行可否を指定してください。')
+        for key in ('id', 'staffId', 'staffName'):
+            ledger_text(row.get(key), 200, '整備管理者の確認情報', required=True)
+        ledger_text(row.get('note'), 2000, '確認・判断理由', required=True)
+        at = duty_timestamp(row.get('at'), '整備管理者の確認日時', japan=False)
+        record = records[row['inspectionId']]
+        if row['inspectionId'] in review_times and at < review_times[row['inspectionId']]:
+            raise ValueError('確認履歴の日時は直前の確認以降にしてください。')
+        review_times[row['inspectionId']] = at
+        if at < duty_timestamp(record['recordedAt'], '点検の記録日時', japan=False):
+            raise ValueError('点検記録後に整備管理者が確認してください。')
+        if row['decision'] == 'allow' and 'defect' in record['results'].values():
+            raise ValueError('異常が残る記録を運行可にはできません。是正後の再点検を追記してください。')
+
+
+def preserve_inspections(previous, current):
+    previous = previous or {}
+    staff = {row['id']: row for row in current.get('staffMembers', [])}
+    vehicles = {row['id']: row for row in current['vehicles']}
+    drivers = {row['id']: row for row in current['drivers']}
+    latest_profile = {row['vehicleId']: row['id'] for row in current.get('inspectionProfiles', [])}
+    replaced = {row.get('supersedes') for row in current.get('dailyInspections', [])}
+    now = time.time() + 300
+    for key in INSPECTION_COLLECTIONS:
+        old, new = previous.get(key, []), current.get(key, [])
+        if new[:len(old)] != old:
+            raise ValueError('保存済みの日常点検・設定・確認履歴は変更・削除できません。追記してください。')
+        if key != 'dailyInspections' and any(row['staffId'] not in staff for row in new):
+            raise ValueError('日常点検で使用した職員は削除できません。利用状態を変更してください。')
+        for row in new[len(old):]:
+            timestamp = duty_timestamp(row.get('recordedAt') if key == 'dailyInspections' else row.get('at'), '記録日時', japan=False)
+            if timestamp.timestamp() > now:
+                raise ValueError('未来の日常点検記録は保存できません。')
+            if key == 'dailyInspections':
+                if not row.get('supersedes'):
+                    driver = drivers[row['driverId']]
+                    vehicle = vehicles[row['vehicleId']]
+                    if driver.get('status') != 'active' or driver.get('name') != row['driverName'] or row['vehicleLabel'] != vehicle.get('name', '') + ' / ' + vehicle.get('plateNo', ''):
+                        raise ValueError('台帳から有効な実施者・車両を選択してください。')
+                    if latest_profile.get(row['vehicleId']) != row['profileId']:
+                        raise ValueError('最新の車両点検方法を使用してください。')
+                continue
+            if key == 'inspectionProfiles':
+                vehicle = vehicles[row['vehicleId']]
+                if row['vehicleLabel'] != vehicle.get('name', '') + ' / ' + vehicle.get('plateNo', ''):
+                    raise ValueError('車両台帳から点検対象を選択してください。')
+            member = staff.get(row['staffId'])
+            if not member or not member['active'] or not member.get('maintenanceManager') or row['staffName'] != member['name']:
+                raise ValueError('職員台帳で選任済みの整備管理者を選択してください。')
+            appointed = ledger_date(member.get('maintenanceAppointmentDate'))
+            if appointed is None or appointed > timestamp.astimezone(timezone(timedelta(hours=9))).date():
+                raise ValueError('整備管理者の選任日を確認してください。')
+            if key == 'inspectionReviews' and row['inspectionId'] in replaced:
+                raise ValueError('訂正前の点検は判断できません。最新の点検を確認してください。')
+
+
+def check_linked_inspection(call, duty, value):
+    identifier = call.get('inspectionRecordId')
+    if not identifier:
+        return
+    records = value.get('dailyInspections', [])
+    record = next((row for row in records if row['id'] == identifier), None)
+    reviews = [row for row in value.get('inspectionReviews', []) if row['inspectionId'] == identifier]
+    if not record or any(row.get('supersedes') == identifier for row in records) or not reviews or reviews[-1]['decision'] != 'allow':
+        raise ValueError('最新の日常点検で整備管理者が運行可と確認した記録を選択してください。')
+    if record['vehicleId'] != call['vehicleId'] or record['at'][:10] != call['at'][:10] or call.get('inspection') != 'ok':
+        raise ValueError('日常点検と点呼の車両・日付・点検状況を確認してください。')
+    if duty_timestamp(reviews[-1]['at'], '整備管理者の確認日時', japan=False) > duty_timestamp(call['at'], '点呼日時'):
+        raise ValueError('整備管理者の確認後に点呼を実施してください。')
 
 
 def validate_duty_logs(value):
@@ -359,6 +491,8 @@ def preserve_duty_logs(previous, current):
                 raise ValueError('保存済みの点呼は消去できません。訂正または勤務の取消として記録してください。')
             if not call or call == original.get(phase):
                 continue
+            if phase == 'before':
+                check_linked_inspection(call, row, current)
             executor = staff.get(call.get('executorStaffId'))
             if call.get('schemaVersion') != 2 or not executor or not executor['active'] or executor['role'] not in ('manager', 'assistant'):
                 raise ValueError('点呼執行者を職員台帳の運行管理者・補助者から選択してください。')
@@ -372,7 +506,7 @@ def preserve_duty_logs(previous, current):
 
 
 def validate(value):
-    if not isinstance(value, dict) or not ALLOWED.issubset(value) or set(value) - ALLOWED - {'dutyLogs', 'staffMembers'}:
+    if not isinstance(value, dict) or not ALLOWED.issubset(value) or set(value) - ALLOWED - {'dutyLogs', 'staffMembers', *INSPECTION_COLLECTIONS}:
         raise ValueError('保存データの形式が正しくありません。')
     for key in set(value) - {'officeOrder'}:
         if not isinstance(value[key], list) or len(value[key]) > 10000:
@@ -389,6 +523,7 @@ def validate(value):
     validate_ledgers(value)
     validate_staff_members(value)
     validate_duty_logs(value)
+    validate_inspections(value)
     vehicles = {row['id'] for row in value['vehicles']}
     drivers = {row['id'] for row in value['drivers']}
     scheduled = value['bookings'] + value['appDuties']
@@ -506,6 +641,7 @@ class Handler(BaseHTTPRequestHandler):
                             self.send(409, {'error': 'ほかの画面から更新されています。再読み込みしてください。'})
                             return
                         preserve_duty_logs(old_value, payload['value'])
+                        preserve_inspections(old_value, payload['value'])
                         if old_value:
                             cur.execute('INSERT INTO workspace_history(revision,value) VALUES(%s,%s) ON CONFLICT DO NOTHING', (current, Json(old_value)))
                         cur.execute('UPDATE workspace SET revision=revision+1,value=%s,updated_at=now() WHERE id=1', (Json(payload['value']),))

@@ -1,4 +1,5 @@
 export type RollCall = {
+  inspectionRecordId?: string;
   schemaVersion?: 2; executorStaffId?: string; executorRole?: string; executorOffice?: string; location?: string;
   visualCheck?: 'yes' | 'no'; detectorCondition?: 'ok' | 'fault' | 'unchecked';
   vehicleReport?: string; roadReport?: string; operationReport?: string;
@@ -20,7 +21,8 @@ export const methodNames = { face: '対面', phone: '電話', other: 'その他'
 export const localTime = (value: string) => value ? new Intl.DateTimeFormat('sv-SE', {
   timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
 }).format(new Date(value)).replace(' ', 'T') : '';
-export const isoTime = (value: string) => value ? `${value}:00+09:00` : '';
+export const localTimeSeconds = (value: string) => value ? `${localTime(value)}:${String(new Date(value).getUTCSeconds()).padStart(2, '0')}` : '';
+export const isoTime = (value: string) => value ? `${value.length === 16 ? value + ':00' : value}+09:00` : '';
 export const displayTime = (value?: string) => value ? localTime(value).replace('T', ' ') : '未記録';
 
 export function latestDuties(records: DutyLog[]): DutyLog[] {
@@ -79,7 +81,7 @@ export function dutyCsv(records: DutyLog[], kind: 'attendance' | 'rollcall' | 'h
   const current = kind === 'history' ? records : latestDuties(records).filter(record => !record.voided);
   const headers = ['勤務ID', '記録ID', '訂正元ID', '勤務日', '運転者コード', '運転者', '出勤日時', '退勤日時', '記録者', '記録日時', '追記訂正理由', '取消', '勤務メモ'];
   const rows: unknown[][] = [];
-  if (kind !== 'attendance') headers.push('点呼区分', '点呼日時', '点呼執行者', '車両', '方法', '具体的方法・理由', '酒気帯び', '検知器使用', '測定値mg/L', '疾病等', '疲労', '睡眠不足', '日常点検', '指示事項', '道路・運行状況の報告', '交替運転者への通告', '対応内容', '執行者職員ID', '執行者役割', '所属営業所', '点呼場所', '目視応答等の確認', '検知器状態', '車両の状況', '道路の状況', '運行の状況', '通告区分', 'その他必要事項');
+  if (kind !== 'attendance') headers.push('点呼区分', '点呼日時', '点呼執行者', '車両', '方法', '具体的方法・理由', '酒気帯び', '検知器使用', '測定値mg/L', '疾病等', '疲労', '睡眠不足', '日常点検', '指示事項', '道路・運行状況の報告', '交替運転者への通告', '対応内容', '執行者職員ID', '執行者役割', '所属営業所', '点呼場所', '目視応答等の確認', '検知器状態', '車両の状況', '道路の状況', '運行の状況', '通告区分', 'その他必要事項', '日常点検記録ID');
   for (const record of current) {
     const base = [record.dutyId, record.id, record.supersedes, record.dutyDate, record.driverCode, record.driverName, displayTime(record.clockIn), record.clockOut ? displayTime(record.clockOut) : '', record.recorder, displayTime(record.recordedAt), record.reason, record.voided ? '取消' : '', record.note];
     if (kind === 'attendance') { rows.push(base); continue; }
@@ -92,7 +94,7 @@ export function dutyCsv(records: DutyLog[], kind: 'attendance' | 'rollcall' | 'h
         call.inspection === 'ok' ? '実施・異常なし' : call.inspection === 'concern' ? '確認事項あり' : call.inspection === 'not_done' ? '未実施' : '', call.instructions, call.report, call.handover, call.response,
         call.executorStaffId, call.executorRole, call.executorOffice, call.location, call.visualCheck === 'yes' ? '確認' : call.visualCheck === 'no' ? '未確認' : '',
         call.detectorCondition === 'ok' ? '正常' : call.detectorCondition === 'fault' ? '故障' : call.detectorCondition === 'unchecked' ? '未確認' : '',
-        call.vehicleReport, call.roadReport, call.operationReport, call.handoverStatus === 'none' ? '交替なし' : call.handoverStatus === 'done' ? '通告済' : call.handoverStatus === 'not_done' ? '未通告' : '', call.otherNotes]);
+        call.vehicleReport, call.roadReport, call.operationReport, call.handoverStatus === 'none' ? '交替なし' : call.handoverStatus === 'done' ? '通告済' : call.handoverStatus === 'not_done' ? '未通告' : '', call.otherNotes, call.inspectionRecordId]);
       added = true;
     }
     if (!added && kind === 'history') rows.push(base);

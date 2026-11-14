@@ -187,6 +187,40 @@ def main():
         raw, _ = call('/api/workspace')
         assert json.loads(raw)['value'] == changed
         checks.append('registered_executor_identity_missing_reports_and_staff_deletion_rejected')
+        # Daily-inspection writes are also restricted to the disposable clone.
+        staff.update(maintenanceManager=True, maintenanceAppointmentDate='1999-01-01')
+        profile = {'id': duty_id + '-profile', 'vehicleId': vehicle['id'],
+                   'vehicleLabel': vehicle['name'] + ' / ' + vehicle['plateNo'],
+                   'at': '2000-01-01T00:00:00Z', 'staffId': staff['id'], 'staffName': staff['name'],
+                   'basis': '複製DB検証用の仮資料', 'methods': '複製DB検証用の点検方法', 'excluded': {}}
+        changed.setdefault('inspectionProfiles', []).append(profile)
+        inspection = {'id': duty_id + '-inspection', 'inspectionId': duty_id + '-inspection-series',
+                      'reason': '', 'recordedAt': '2000-01-01T12:56:00Z', 'at': '2000-01-01T21:55:00+09:00',
+                      'vehicleId': vehicle['id'], 'vehicleLabel': profile['vehicleLabel'],
+                      'driverId': driver['id'], 'driverName': driver['name'], 'profileId': profile['id'],
+                      'odometer': 100, 'results': {key: 'ok' for key in app.INSPECTION_KEYS},
+                      'notes': '', 'previousIssues': '複製DB確認用：前回報告なし'}
+        changed.setdefault('dailyInspections', []).append(inspection)
+        review = {'id': duty_id + '-review', 'inspectionId': inspection['id'],
+                  'at': '2000-01-01T13:00:00Z', 'staffId': staff['id'], 'staffName': staff['name'],
+                  'decision': 'allow', 'note': '複製DB確認用の判断'}
+        changed.setdefault('inspectionReviews', []).append(review)
+        raw, _ = call('/api/workspace', {'revision': final_revision, 'value': changed}, method='PUT')
+        final_revision = json.loads(raw)['revision']
+        for key in app.INSPECTION_COLLECTIONS:
+            tampered = copy.deepcopy(changed)
+            tampered[key][-1]['id'] += '-overwritten'
+            call('/api/workspace', {'revision': final_revision, 'value': tampered}, method='PUT', expected=400)
+        tampered = copy.deepcopy(changed)
+        defect = {**copy.deepcopy(inspection), 'id': duty_id + '-defect', 'inspectionId': duty_id + '-defect-series',
+                  'notes': '検証用の異常'}
+        defect['results']['TY01'] = 'defect'
+        tampered['dailyInspections'].append(defect)
+        tampered['inspectionReviews'].append({**review, 'id': duty_id + '-unsafe-review', 'inspectionId': defect['id']})
+        call('/api/workspace', {'revision': final_revision, 'value': tampered}, method='PUT', expected=400)
+        raw, _ = call('/api/workspace')
+        assert json.loads(raw)['value'] == changed
+        checks.append('daily_inspection_and_maintenance_review_persist_and_history_and_unsafe_allow_rejected')
         result['checks'] = checks
         print(json.dumps(result))
     finally:
