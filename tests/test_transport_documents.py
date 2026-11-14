@@ -32,6 +32,11 @@ def document(kind='acceptance'):
 
 
 class TransportDocumentTests(unittest.TestCase):
+    def test_shared_profile_only_accepts_supported_text_fields(self):
+        app.validate_document_profile({'issuerName': '登録事業者', 'depotPlace': '登録車庫'})
+        for profile in ({'unneeded': '不要な項目'}, {'issuerName': 'x' * 201}, {'depotPlace': False}):
+            with self.subTest(profile=profile), self.assertRaises(ValueError): app.validate_document_profile(profile)
+
     def test_both_documents_and_future_operation_times(self):
         for kind in ('acceptance', 'instruction'):
             app.validate_transport_document(document(kind), workspace())
@@ -57,8 +62,10 @@ class TransportDocumentTests(unittest.TestCase):
             value = workspace(); value['staffMembers'][0]['role'] = role
             app.validate_transport_document(document(), value)
             with self.assertRaises(ValueError): app.validate_transport_document(document('instruction'), value)
-        row = document('instruction'); row['values']['safetyInstructions'] = ''
-        with self.assertRaises(ValueError): app.validate_transport_document(row, workspace())
+        row = document('instruction')
+        for key in ('issuerName', 'officeName', 'issuerPhone', 'boardingPlace', 'alightingPlace', 'safetyInstructions'):
+            row['values'][key] = ''
+        app.validate_transport_document(row, workspace())
 
     def test_stale_or_removed_source_cannot_issue_new_document(self):
         value = workspace(); value['bookings'][0]['title'] = '変更後'
@@ -89,6 +96,7 @@ class TransportDocumentTests(unittest.TestCase):
             event = dict(id='event-1', recordId=row['id'], kind='delivery' if kind == 'acceptance' else 'instruction',
                          at='2026-11-13T10:00:00+09:00', staffId='staff-1', staffName='テスト運行管理者', recipient='確認用相手', method='手渡し', note='交付又は指示と携行を確認')
             app.validate_transport_event(event, row, workspace())
-            for patch in ({'at': '2099-01-01T10:00:00+09:00'}, {'at': '2020-01-01T10:00:00+09:00'}, {'method': ''}, {'recipient': ''}, {'note': ''}, {'recordId': 'missing'}):
+            app.validate_transport_event({**event, 'note': ''}, row, workspace())
+            for patch in ({'at': '2099-01-01T10:00:00+09:00'}, {'at': '2020-01-01T10:00:00+09:00'}, {'method': ''}, {'recipient': ''}, {'recordId': 'missing'}):
                 with self.subTest(patch=patch), self.assertRaises(ValueError): app.validate_transport_event({**event, **patch}, row, workspace())
             with self.assertRaises(ValueError): app.validate_transport_event(event, {**row, 'voided': True}, workspace())

@@ -52,11 +52,12 @@ let uploadedPhotos;
 let rejectPhotoUpload;
 let rejectWorkspaceWrites;
 let lastWorkspaceAttempt;
+let remoteProfile;
 let remoteDocuments;
 let remoteDocumentEvents;
 
 async function setup({ existingPhoto = false, configureWorkspace } = {}) {
-  remoteDocuments = []; remoteDocumentEvents = [];
+  remoteDocuments = []; remoteDocumentEvents = []; remoteProfile = { revision: 0, profile: {} };
   remote = { revision: 1, value: JSON.parse(JSON.stringify(createSeed())) };
   uploadedPhotos = 0;
   rejectPhotoUpload = false;
@@ -66,6 +67,10 @@ async function setup({ existingPhoto = false, configureWorkspace } = {}) {
   global.fetch = async (url, options = {}) => {
     if (url.startsWith('/api/transport-documents')) {
       const parsed = new URL(url, 'https://test.invalid');
+      if (parsed.pathname.endsWith('/settings')) {
+        if (options.method === 'POST') { const payload = JSON.parse(options.body); remoteProfile = { revision: remoteProfile.revision + 1, profile: payload.profile }; }
+        return { ok: true, json: async () => structuredClone(remoteProfile) };
+      }
       if (options.method === 'POST') {
         const row = JSON.parse(options.body); const isEvent = parsed.pathname.endsWith('/events');
         const collection = isEvent ? remoteDocumentEvents : remoteDocuments;
@@ -80,6 +85,7 @@ async function setup({ existingPhoto = false, configureWorkspace } = {}) {
         } else assert.deepEqual(found, row);
         return { ok: true, json: async () => ({ [isEvent ? 'event' : 'record']: structuredClone(row) }) };
       }
+      if (parsed.searchParams.has('sourceId')) return { ok: true, json: async () => ({ records: structuredClone(remoteDocuments.filter(row => row.kind === 'acceptance' && !row.voided && row.source.id === parsed.searchParams.get('sourceId') && row.source.collection === parsed.searchParams.get('sourceCollection') && !remoteDocuments.some(n => n.supersedes === row.id)).slice(-1)) }) };
       const identifier = parsed.searchParams.get('documentId');
       return { ok: true, json: async () => identifier
         ? { records: structuredClone(remoteDocuments.filter(row => row.documentId === identifier)), events: structuredClone(remoteDocumentEvents.filter(event => remoteDocuments.some(row => row.documentId === identifier && row.id === event.recordId))) }
@@ -557,6 +563,34 @@ test('partner tariffs retain distinct money units, support edits, and stay isola
 
 const testManager = { id: 'test-manager', code: 'TEST-001', name: 'テスト運行管理者', role: 'manager', officeName: '東京営業所', active: true, appointmentDate: '2020-01-01', qualification: 'テスト用' };
 
+test('instruction uses a saved depot and only asks for two missing operation times', async () => {
+  await setup({ configureWorkspace: value => {
+    value.staffMembers = [testManager]; value.bookings[0].client.email = 'test@example.com';
+  } });
+  try {
+    await click('受書・運行指示書'); await click('会社・車庫の設定');
+    let form = one('form[aria-label="会社・車庫の設定"]');
+    await fill(field('事業者の正式名称', form), '確認用正式事業者');
+    await fill(field('通常の出庫・帰庫地点（車庫）', form), '登録した車庫');
+    await submit(form); await reload(); await click('受書・運行指示書');
+    await fill(field('帳票を作る予約'), `bookings:${remote.value.bookings[0].id}`); await click('運行指示書を作成');
+    form = one('form[aria-label="運送帳票の作成"]');
+    assert.equal(form.querySelectorAll('input').length, 2, 'only missing departure and return times need entry');
+    assert.equal(form.querySelectorAll('textarea[required]').length, 0, 'no forced no-additional-instructions note');
+    assert.match(form.textContent, /登録した車庫/);
+    await fill(field('運行開始日時 ＊', form), remote.value.bookings[0].start.slice(0, 10) + 'T08:00');
+    await fill(field('運行終了日時 ＊', form), remote.value.bookings[0].end.slice(0, 10) + 'T11:00');
+    assert.equal(form.querySelectorAll('input').length, 2, 'inputs must remain while typing');
+    await submit(form); assert.equal(remoteDocuments.length, 1);
+    assert.equal(remoteDocuments[0].values.operationStartPlace, '登録した車庫');
+    assert.equal(remoteDocuments[0].values.safetyInstructions, '');
+    assert.equal(remoteDocuments[0].values.issuerName, '確認用正式事業者');
+    await click('帳票を閉じる'); await click('会社・車庫の設定');
+    form = one('form[aria-label="会社・車庫の設定"]'); await fill(field('事業者の正式名称', form), '変更後事業者'); await submit(form);
+    assert.equal(remoteDocuments[0].values.issuerName, '確認用正式事業者', 'settings do not rewrite issued snapshots');
+  } finally { await unmount(); }
+});
+
 test('transport documents preserve issued values, delivery logs, correction history and printable snapshots', async () => {
   await setup({ configureWorkspace: value => {
     value.staffMembers = [testManager];
@@ -568,7 +602,7 @@ test('transport documents preserve issued values, delivery logs, correction hist
     await click('受書を作成');
     let form = one('form[aria-label="運送帳票の作成"]');
     assert.equal(field('運賃（税込・円） ＊', form).value, '', 'tax-exclusive quote must not become a tax-inclusive fare');
-    const values = { issuerName: '確認用正式事業者', officeName: '確認用営業所', issuerAddress: '確認用住所', issuerPhone: '確認用連絡先', emergencyContact: '確認用緊急連絡先', serviceArea: '確認用営業区域', applicantName: '確認用申込者', applicantContact: 'test@example.com', operationStartPlace: '車庫', operationStartAt: '2027-01-01T08:00', operationEndPlace: '車庫', operationEndAt: '2027-01-01T11:00', boardingPlace: '乗車地', boardingAt: '2027-01-01T09:00', alightingPlace: '降車地', alightingAt: '2027-01-01T10:00', fare: '11000', charge: '0', safetyInstructions: '安全確認を行う' };
+    const values = { issuerName: '確認用正式事業者', officeName: '確認用営業所', issuerAddress: '確認用住所', issuerPhone: '確認用連絡先', emergencyContact: '確認用緊急連絡先', serviceArea: '確認用営業区域', applicantName: 'テスト顧客', applicantContact: 'test@example.com', operationStartPlace: '車庫', operationStartAt: '2027-01-01T08:00', operationEndPlace: '車庫', operationEndAt: '2027-01-01T11:00', boardingPlace: '乗車地', boardingAt: '2027-01-01T09:00', alightingPlace: '降車地', alightingAt: '2027-01-01T10:00', fare: '11000', charge: '0', safetyInstructions: '安全確認を行う' };
     const { relevantFields } = require('../client/src/lib/transportDocuments.ts');
     async function complete(kind) {
       form = one('form[aria-label="運送帳票の作成"]');
@@ -579,6 +613,10 @@ test('transport documents preserve issued values, delivery logs, correction hist
     await complete('acceptance'); await submit(form);
     assert.equal(remoteDocuments.length, 1); assert.equal(remote.value.transportDocuments, undefined, 'documents are separate from the workspace');
     const first = structuredClone(remoteDocuments[0]);
+    const { instructionValues } = require('../client/src/lib/transportDocuments.ts');
+    const linkedJob = { ...remote.value.bookings[0], collection: 'bookings', id: String(remote.value.bookings[0].id) };
+    assert.equal(instructionValues({ ...linkedJob, client: { name: '変更後の顧客' } }, {}, first).operationStartAt, '', 'a changed customer cannot silently reuse an earlier receipt');
+    assert.equal(instructionValues({ ...linkedJob, client: { ...linkedJob.client, phone: '03-0000-0000' } }, {}, first).applicantContact, '03-0000-0000', 'current contact details take precedence');
     assert.match(one('.transport-document').textContent, /11,000円/);
     let prints = 0; window.print = () => { prints++; }; await click('印刷・PDF保存'); assert.equal(prints, 1);
     await click('交付した記録を残す');
@@ -592,7 +630,11 @@ test('transport documents preserve issued values, delivery logs, correction hist
     await submit(form); assert.equal(remoteDocuments.length, 2); assert.deepEqual(remoteDocuments[0], first);
     assert.match(one('.transport-document').textContent, /12,000円/);
     await click('第1版'); assert.match(one('.transport-document').textContent, /旧版・訂正前/); assert.match(one('.transport-document').textContent, /11,000円/);
-    await click('帳票を閉じる'); await click('運行指示書を作成'); await complete('instruction'); await submit(form);
+    await click('帳票を閉じる'); await click('運行指示書を作成'); form = one('form[aria-label="運送帳票の作成"]');
+    assert.equal(form.querySelectorAll('input').length, 0, 'receipt supplies all required operation and customer fields');
+    assert.equal(field('指示する運行管理者', form).value, testManager.id, 'a single eligible manager needs no repeated selection');
+    assert.doesNotMatch(form.textContent, /事業者の正式名称|日時の確定状況|その他の事項/);
+    await fill(field('追加の指示（ある場合だけ）', form), '安全確認を行う'); await submit(form);
     assert.equal(remoteDocuments.length, 3); assert.equal(remoteDocuments[2].kind, 'instruction');
     assert.match(one('.transport-document').textContent, /安全確認を行う/); assert.match(one('.transport-document').textContent, /品川300/);
     await click('帳票を閉じる'); await reload(); await click('受書・運行指示書'); await fill(field('利用日'), '2027-01-01');
@@ -603,7 +645,7 @@ test('transport documents preserve issued values, delivery logs, correction hist
 test('passenger daily inspection saves explicit results, review and correction with immutable originals', async () => {
   await setup({ configureWorkspace: value => { value.staffMembers = [{ ...testManager, maintenanceManager: true, maintenanceAppointmentDate: '2020-01-01' }]; } });
   try {
-    await click('日常点検');
+    await click('日常点検'); await fill(field('点検日'), '2026-11-14');
     await fill(field('点検する車両'), '11');
     assert.equal(button('日常点検を記録').disabled, true);
     await click('車両の点検方法を設定');
@@ -642,7 +684,7 @@ test('passenger daily inspection saves explicit results, review and correction w
     assert.deepEqual(remote.value.dailyInspections[0], original);
     assert.equal(remote.value.dailyInspections[1].supersedes, original.id);
     assert.match(document.body.textContent, /整備管理者の確認待ち/);
-    await reload(); await click('日常点検');
+    await reload(); await click('日常点検'); await fill(field('点検日'), '2026-11-14');
     assert.match(document.body.textContent, /124 km/);
     await click('詳細・履歴');
     assert.match(one('[aria-label="日常点検の履歴"]').textContent, /距離の訂正/);
