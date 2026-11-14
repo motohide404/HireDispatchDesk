@@ -81,7 +81,7 @@ function saveAndWait(): Promise<void> {
 // retry after a failed response safe; unrelated stale work is never discarded.
 export async function appendCollectionAndSave<T extends { id: string | number }>(key: string, items: T[]): Promise<void> {
   if (!items.length) return;
-  const current = data[key];
+  const current = key === 'dutyLogs' ? data[key] ?? [] : data[key];
   if (!Array.isArray(current)) throw new Error('登録先のデータを読み込めません。再読み込みしてください。');
   const ids = items.map(item => String(item.id));
   if (new Set(ids).size !== ids.length) throw new Error('同じ登録IDが重複しています。');
