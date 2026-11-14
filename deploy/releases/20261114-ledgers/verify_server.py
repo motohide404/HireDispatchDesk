@@ -16,6 +16,16 @@ import urllib.request
 import zlib
 
 
+def add_exercise_driver(value, suffix):
+    # A historical open test shift on an actual driver would overlap an existing
+    # open duty, even if the test closes its own shift in a subsequent request.
+    driver = copy.deepcopy(value['drivers'][0])
+    driver.update(id=max(row['id'] for row in value['drivers']) + 1,
+                  code='VERIFY-' + suffix, name='検証専用運転者', status='active')
+    value['drivers'].append(driver)
+    return driver
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--app', required=True)
@@ -69,7 +79,11 @@ def main():
         with response:
             raw = response.read()
             if response.status != expected:
-                raise RuntimeError(f'API検証失敗: {path}: HTTP {response.status}, expected {expected}')
+                try:
+                    detail = json.loads(raw).get('error', '')
+                except (ValueError, AttributeError):
+                    detail = ''
+                raise RuntimeError(f'API検証失敗: {path}: HTTP {response.status}, expected {expected}: {str(detail)[:500]}')
             return raw, response.headers
 
     checks = []
@@ -98,6 +112,15 @@ def main():
         changed = copy.deepcopy(original)
         assert changed['drivers'] and changed['vehicles'] and changed['partners']
         today = date.today()
+        future_job_ids = []
+        for days in (1, 30, 365):
+            job_id = 'release-future-' + secrets.token_hex(6)
+            future_job_ids.append(job_id)
+            day = (today + timedelta(days=days)).isoformat()
+            changed['jobPool'].append({'id': job_id, 'title': '未来日予約の保存検証',
+                                       'client': {'type': '個人', 'name': '検証用予約者', 'source': 'manual', 'email': 'test@example.com'},
+                                       'start': day + 'T09:00:00+09:00', 'end': day + 'T10:00:00+09:00',
+                                       'vehicleId': None, 'driverId': None, 'amount': 0, 'note': '複製DB内だけの検証'})
         assessment = {'id': 'release-test-' + secrets.token_hex(6), 'type': '一般診断',
                       'assessedAt': today.isoformat(), 'institution': 'リリース検証用',
                       'nextDueAt': (today + timedelta(days=365)).isoformat()}
@@ -113,6 +136,9 @@ def main():
         raw, _ = call('/api/workspace')
         assert json.loads(raw)['value'] == changed
         checks.append('all_three_ledger_features_persisted')
+        saved_jobs = json.loads(raw)['value']['jobPool']
+        assert all(any(job['id'] == identifier for job in saved_jobs) for identifier in future_job_ids)
+        checks.append('future_jobs_tomorrow_next_month_next_year_persist_and_reload')
         tariff['baseFare'] = 36000
         assessment['nextDueAt'] = (today + timedelta(days=366)).isoformat()
         raw, _ = call('/api/workspace', {'revision': saved_revision, 'value': changed}, method='PUT')
@@ -134,7 +160,7 @@ def main():
         staff = {'id': duty_id + '-staff', 'code': duty_id, 'name': '検証用運行管理者', 'officeName': '検証用営業所',
                  'role': 'manager', 'active': True, 'appointmentDate': '1999-01-01', 'qualification': '検証用'}
         changed.setdefault('staffMembers', []).append(staff)
-        driver = original['drivers'][0]
+        driver = add_exercise_driver(changed, duty_id)
         vehicle = original['vehicles'][0]
         shift = {'id': duty_id + '-1', 'dutyId': duty_id, 'recordedAt': '2000-01-02T00:00:00Z',
                  'recorder': staff['name'], 'recorderStaffId': staff['id'], 'reason': '', 'driverId': driver['id'],
