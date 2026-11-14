@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "tsc --noEmit",
-    "test": "cd .. && node --test tests/test_store.cjs tests/test_ledger.cjs tests/test_job_entry.cjs tests/test_ledger_ui.cjs",
+    "test": "cd .. && node --test tests/test_store.cjs tests/test_duty_log.cjs tests/test_ledger.cjs tests/test_job_entry.cjs tests/test_ledger_ui.cjs",
     "test:e2e": "playwright test",
     "preview": "vite preview"
   },

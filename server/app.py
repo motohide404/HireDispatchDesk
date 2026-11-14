@@ -203,10 +203,116 @@ def inline_image_type(content):
     return None
 
 
+def duty_timestamp(value, label, japan=True):
+    if not isinstance(value, str) or len(value) > 40 or (japan and not value.endswith('+09:00')):
+        raise ValueError(label + 'は日本時間の日時で入力してください。')
+    parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    if parsed.tzinfo is None:
+        raise ValueError(label + 'のタイムゾーンを確認してください。')
+    return parsed
+
+
+def validate_duty_logs(value):
+    records = value.get('dutyLogs', [])
+    drivers = {row['id'] for row in value['drivers']}
+    vehicles = {row['id'] for row in value['vehicles']}
+    seen, latest = {}, {}
+    for record in records:
+        for key in ('id', 'dutyId'):
+            ledger_text(record.get(key), 100, '勤務記録ID', required=True)
+        ledger_text(record.get('recorder'), 200, '記録者', required=True)
+        ledger_text(record.get('driverName'), 200, '運転者名', required=True)
+        ledger_text(record.get('driverCode'), 200, '運転者コード', required=True)
+        ledger_text(record.get('reason'), 2000, '追記訂正理由')
+        ledger_text(record.get('note'), 2000, '勤務メモ')
+        if type(record.get('driverId')) is not int or record['driverId'] not in drivers or type(record.get('voided')) is not bool:
+            raise ValueError('勤務の運転者・取消区分を確認してください。')
+        duty_timestamp(record.get('recordedAt'), '記録日時', japan=False)
+        start = duty_timestamp(record.get('clockIn'), '出勤日時')
+        day = ledger_date(record.get('dutyDate'))
+        if day is None or start.date() != day:
+            raise ValueError('勤務日と出勤日時が一致しません。')
+        end = duty_timestamp(record['clockOut'], '退勤日時') if record.get('clockOut') else None
+        if end is not None and end < start:
+            raise ValueError('退勤日時は出勤以降にしてください。')
+        previous = record.get('supersedes')
+        if previous:
+            ledger_text(previous, 100, '訂正元ID', required=True)
+            old = seen.get(previous)
+            if old is None or old['dutyId'] != record['dutyId'] or latest.get(record['dutyId']) != previous or old['driverId'] != record['driverId'] or old['dutyDate'] != record['dutyDate']:
+                raise ValueError('勤務記録の追記・訂正元が最新の記録ではありません。')
+            ledger_text(record.get('reason'), 2000, '追記訂正理由', required=True)
+        elif record['dutyId'] in latest or record['voided']:
+            raise ValueError('勤務IDが重複、または新規記録が取消になっています。')
+        seen[record['id']] = record
+        latest[record['dutyId']] = record['id']
+        for phase in ('before', 'after'):
+            call = record.get(phase)
+            if call is None:
+                continue
+            if not isinstance(call, dict):
+                raise ValueError('点呼の記録形式を確認してください。')
+            at = duty_timestamp(call.get('at'), '点呼日時')
+            if at < start or (end is not None and at > end):
+                raise ValueError('点呼日時は出勤から退勤の間にしてください。')
+            if phase == 'after' and record.get('before') and at < duty_timestamp(record['before']['at'], '乗務前点呼日時'):
+                raise ValueError('乗務後点呼は乗務前点呼以降にしてください。')
+            if type(call.get('vehicleId')) is not int or call['vehicleId'] not in vehicles:
+                raise ValueError('点呼の車両を確認してください。')
+            for key, label in (('executor', '点呼執行者'), ('vehicleLabel', '車両表示')):
+                ledger_text(call.get(key), 200, label, required=True)
+            for key in ('methodDetail', 'instructions', 'report', 'handover', 'response'):
+                ledger_text(call.get(key), 2000, '点呼の記録内容')
+            for key, options in {'method': ('face', 'phone', 'other'), 'alcohol': ('none', 'detected'),
+                                 'detectorUsed': ('yes', 'no'), 'health': ('good', 'concern'),
+                                 'fatigue': ('none', 'concern'), 'sleep': ('enough', 'insufficient')}.items():
+                if call.get(key) not in options:
+                    raise ValueError('点呼の確認項目をすべて選択してください。')
+            if phase == 'before' and call.get('inspection') not in ('ok', 'concern'):
+                raise ValueError('日常点検の状況を選択してください。')
+            if call['method'] != 'face':
+                ledger_text(call.get('methodDetail'), 2000, '対面以外の具体的方法・理由', required=True)
+            amount = call.get('alcoholValue')
+            if amount is not None:
+                if type(amount) not in (int, float):
+                    raise ValueError('アルコール測定値は数値で入力してください。')
+                number = Decimal(str(amount))
+                if not number.is_finite() or number < 0 or number > 10 or number * 1000 != (number * 1000).to_integral_value():
+                    raise ValueError('アルコール測定値は0〜10 mg/L、小数3桁以内で入力してください。')
+            attention = call['alcohol'] == 'detected' or (amount is not None and amount > 0) or call['detectorUsed'] == 'no' or call['health'] == 'concern' or call['fatigue'] == 'concern' or call['sleep'] == 'insufficient' or call.get('inspection') == 'concern'
+            if attention:
+                ledger_text(call.get('response'), 2000, '確認事項への対応内容', required=True)
+    active = [seen[identifier] for identifier in latest.values() if not seen[identifier]['voided']]
+    by_driver = {}
+    for record in active:
+        by_driver.setdefault(record['driverId'], []).append(record)
+    for shifts in by_driver.values():
+        shifts.sort(key=lambda record: record['clockIn'])
+        for previous, current in zip(shifts, shifts[1:]):
+            if not previous.get('clockOut') or duty_timestamp(previous['clockOut'], '退勤日時') > duty_timestamp(current['clockIn'], '出勤日時'):
+                raise ValueError('同じ運転者の勤務時間が重複しています。未退勤の勤務を確認してください。')
+
+
+def preserve_duty_logs(previous, current):
+    # The complete ordered history is immutable. Corrections append a new version.
+    old = (previous or {}).get('dutyLogs', [])
+    new = current.get('dutyLogs', [])
+    if new[:len(old)] != old:
+        raise ValueError('保存済みの点呼・出勤記録は変更・削除できません。理由を付けて追記・訂正してください。')
+    previous_ids = {row['id'] for row in old}
+    now = time.time() + 300
+    for row in new:
+        if row['id'] in previous_ids:
+            continue
+        for value in (row['clockIn'], row.get('clockOut'), row.get('before', {}).get('at'), row.get('after', {}).get('at'), row['recordedAt']):
+            if value and duty_timestamp(value, '実績日時', japan=False).timestamp() > now:
+                raise ValueError('実際に実施した日時を入力してください。未来の実績は保存できません。')
+
+
 def validate(value):
-    if not isinstance(value, dict) or set(value) != ALLOWED:
+    if not isinstance(value, dict) or not ALLOWED.issubset(value) or set(value) - ALLOWED - {'dutyLogs'}:
         raise ValueError('保存データの形式が正しくありません。')
-    for key in ALLOWED - {'officeOrder'}:
+    for key in set(value) - {'officeOrder'}:
         if not isinstance(value[key], list) or len(value[key]) > 10000:
             raise ValueError('データ件数または形式を確認してください。')
         ids = []
@@ -219,6 +325,7 @@ def validate(value):
     if not isinstance(value['officeOrder'], dict):
         raise ValueError('拠点の並び順が正しくありません。')
     validate_ledgers(value)
+    validate_duty_logs(value)
     vehicles = {row['id'] for row in value['vehicles']}
     drivers = {row['id'] for row in value['drivers']}
     scheduled = value['bookings'] + value['appDuties']
@@ -335,6 +442,7 @@ class Handler(BaseHTTPRequestHandler):
                         if type(payload.get('revision')) is not int or current != payload['revision']:
                             self.send(409, {'error': 'ほかの画面から更新されています。再読み込みしてください。'})
                             return
+                        preserve_duty_logs(old_value, payload['value'])
                         if old_value:
                             cur.execute('INSERT INTO workspace_history(revision,value) VALUES(%s,%s) ON CONFLICT DO NOTHING', (current, Json(old_value)))
                         cur.execute('UPDATE workspace SET revision=revision+1,value=%s,updated_at=now() WHERE id=1', (Json(payload['value']),))
