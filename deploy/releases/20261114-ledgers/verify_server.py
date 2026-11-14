@@ -131,16 +131,21 @@ def main():
         checks.append('other_drivers_and_partners_unchanged')
         # Attendance/rollcall write checks are limited to this disposable clone.
         duty_id = 'release-duty-' + secrets.token_hex(6)
+        staff = {'id': duty_id + '-staff', 'code': duty_id, 'name': '検証用運行管理者', 'officeName': '検証用営業所',
+                 'role': 'manager', 'active': True, 'appointmentDate': '1999-01-01', 'qualification': '検証用'}
+        changed.setdefault('staffMembers', []).append(staff)
         driver = original['drivers'][0]
         vehicle = original['vehicles'][0]
         shift = {'id': duty_id + '-1', 'dutyId': duty_id, 'recordedAt': '2000-01-02T00:00:00Z',
-                 'recorder': 'リリース検証用', 'reason': '', 'driverId': driver['id'],
+                 'recorder': staff['name'], 'recorderStaffId': staff['id'], 'reason': '', 'driverId': driver['id'],
                  'driverName': driver.get('name', '検証用'), 'driverCode': driver.get('code', 'TEST'),
                  'dutyDate': '2000-01-01', 'clockIn': '2000-01-01T22:00:00+09:00', 'note': '', 'voided': False}
         changed.setdefault('dutyLogs', []).append(shift)
         raw, _ = call('/api/workspace', {'revision': latest_revision, 'value': changed}, method='PUT')
         attendance_revision = json.loads(raw)['revision']
-        rollcall = {'at': '2000-01-01T22:10:00+09:00', 'executor': '検証用点呼担当', 'method': 'face',
+        rollcall = {'schemaVersion': 2, 'executorStaffId': staff['id'], 'executorRole': staff['role'], 'executorOffice': staff['officeName'],
+                    'location': '検証用営業所', 'visualCheck': 'yes', 'detectorCondition': 'ok', 'otherNotes': '',
+                    'at': '2000-01-01T22:10:00+09:00', 'executor': staff['name'], 'method': 'face',
                     'methodDetail': '', 'vehicleId': vehicle['id'], 'vehicleLabel': '検証用車両',
                     'alcohol': 'none', 'detectorUsed': 'yes', 'health': 'good', 'fatigue': 'none',
                     'sleep': 'enough', 'inspection': 'ok', 'instructions': '検証用', 'report': '', 'handover': '', 'response': ''}
@@ -149,7 +154,7 @@ def main():
         raw, _ = call('/api/workspace', {'revision': attendance_revision, 'value': changed}, method='PUT')
         rollcall_revision = json.loads(raw)['revision']
         third = {**second, 'id': duty_id + '-3', 'supersedes': second['id'], 'reason': '乗務後点呼と退勤を追記',
-                 'clockOut': '2000-01-02T06:00:00+09:00', 'after': {**rollcall, 'at': '2000-01-02T05:50:00+09:00'}}
+                 'clockOut': '2000-01-02T06:00:00+09:00', 'after': {**rollcall, 'at': '2000-01-02T05:50:00+09:00', 'vehicleReport': '異常なし', 'roadReport': '異常なし', 'operationReport': '異常なし', 'handoverStatus': 'none'}}
         changed['dutyLogs'].append(third)
         raw, _ = call('/api/workspace', {'revision': rollcall_revision, 'value': changed}, method='PUT')
         final_revision = json.loads(raw)['revision']
@@ -166,6 +171,22 @@ def main():
         assert json.loads(raw)['value'] == changed and json.loads(raw)['revision'] == final_revision
         checks.append('overnight_attendance_linked_rollcalls_and_append_only_corrections_persist')
         checks.append('existing_duty_history_changes_and_deletions_rejected')
+        tampered = copy.deepcopy(changed)
+        invalid_fourth = {**copy.deepcopy(third), 'id': duty_id + '-4', 'supersedes': third['id'], 'reason': '執行者の不正差替え'}
+        invalid_fourth['after']['executor'] = '職員台帳にない名前'
+        tampered['dutyLogs'].append(invalid_fourth)
+        call('/api/workspace', {'revision': final_revision, 'value': tampered}, method='PUT', expected=400)
+        tampered = copy.deepcopy(changed)
+        tampered['staffMembers'] = [row for row in tampered['staffMembers'] if row['id'] != staff['id']]
+        call('/api/workspace', {'revision': final_revision, 'value': tampered}, method='PUT', expected=400)
+        tampered = copy.deepcopy(changed)
+        missing_report = {**copy.deepcopy(third), 'id': duty_id + '-5', 'supersedes': third['id'], 'reason': '報告の欠落'}
+        missing_report['after']['roadReport'] = ''
+        tampered['dutyLogs'].append(missing_report)
+        call('/api/workspace', {'revision': final_revision, 'value': tampered}, method='PUT', expected=400)
+        raw, _ = call('/api/workspace')
+        assert json.loads(raw)['value'] == changed
+        checks.append('registered_executor_identity_missing_reports_and_staff_deletion_rejected')
         result['checks'] = checks
         print(json.dumps(result))
     finally:

@@ -81,7 +81,7 @@ function saveAndWait(): Promise<void> {
 // retry after a failed response safe; unrelated stale work is never discarded.
 export async function appendCollectionAndSave<T extends { id: string | number }>(key: string, items: T[]): Promise<void> {
   if (!items.length) return;
-  const current = key === 'dutyLogs' ? data[key] ?? [] : data[key];
+  const current = ['dutyLogs', 'staffMembers'].includes(key) ? data[key] ?? [] : data[key];
   if (!Array.isArray(current)) throw new Error('登録先のデータを読み込めません。再読み込みしてください。');
   const ids = items.map(item => String(item.id));
   if (new Set(ids).size !== ids.length) throw new Error('同じ登録IDが重複しています。');
@@ -112,6 +112,33 @@ export async function appendCollectionAndSave<T extends { id: string | number }>
         return;
       }
     } catch { /* Keep the original save error and all local work. */ }
+    throw error;
+  }
+}
+
+// Staff metadata may change; duty records retain their original name/role snapshots.
+export async function saveStaffMember<T extends { id: string }>(item: T, original?: T): Promise<void> {
+  const current = data.staffMembers ?? [];
+  if (!Array.isArray(current)) throw new Error('職員台帳を読み込めません。');
+  const found = current.find(row => row.id === item.id);
+  const same = found && canonical(found) === canonical(item);
+  if (!same) {
+    if (blocked) throw new Error(message);
+    if ((original && canonical(found) !== canonical(original)) || (!original && found)) throw new Error('職員情報が更新されています。最新の情報を開き直してください。');
+    if (!found && current.length >= 10000) throw new Error('職員登録の上限に達しています。');
+    data = { ...data, staffMembers: found ? current.map(row => row.id === item.id ? item : row) : [...current, item] };
+    dirty = true; message = '保存待ち…'; notify();
+  }
+  blocked = false;
+  try { await saveAndWait(); }
+  catch (error) {
+    try {
+      const remote = await request('/api/workspace');
+      if (remote.value?.staffMembers?.some((row: T) => row.id === item.id && canonical(row) === canonical(item))) {
+        if (canonical(remote.value) === canonical(data)) { data = remote.value; revision = remote.revision; dirty = false; blocked = false; message = '保存済み'; notify(); }
+        return;
+      }
+    } catch { /* Preserve the original save failure and input. */ }
     throw error;
   }
 }

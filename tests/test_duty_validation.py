@@ -24,7 +24,10 @@ class DutyValidationTests(unittest.TestCase):
         second = {**first, 'id': 'r2', 'supersedes': 'r1', 'reason': '乗務前点呼を追記', 'before': call()}
         before, after = self.workspace([first]), self.workspace([first, second])
         app.validate(after)
-        app.preserve_duty_logs(before, after)
+        # Existing v1 data remain readable and unchanged; new entries require a registered executor.
+        app.preserve_duty_logs(before, before)
+        with self.assertRaisesRegex(ValueError, '職員台帳'):
+            app.preserve_duty_logs(before, after)
         self.assertNotIn('before', first)
         for replacement in ([], [{**first, 'note': '上書き'}], [second]):
             with self.subTest(replacement=replacement), self.assertRaises(ValueError):
