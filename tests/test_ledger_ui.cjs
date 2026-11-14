@@ -52,8 +52,11 @@ let uploadedPhotos;
 let rejectPhotoUpload;
 let rejectWorkspaceWrites;
 let lastWorkspaceAttempt;
+let remoteDocuments;
+let remoteDocumentEvents;
 
 async function setup({ existingPhoto = false, configureWorkspace } = {}) {
+  remoteDocuments = []; remoteDocumentEvents = [];
   remote = { revision: 1, value: JSON.parse(JSON.stringify(createSeed())) };
   uploadedPhotos = 0;
   rejectPhotoUpload = false;
@@ -61,6 +64,27 @@ async function setup({ existingPhoto = false, configureWorkspace } = {}) {
   if (existingPhoto) remote.value.drivers[0].facePhoto = { id: 'c'.repeat(32), type: 'photo', name: 'old.png', uri: '/api/files/' + 'c'.repeat(32) + '?inline=1', uploadedAt: '2026-11-01' };
   if (configureWorkspace) configureWorkspace(remote.value);
   global.fetch = async (url, options = {}) => {
+    if (url.startsWith('/api/transport-documents')) {
+      const parsed = new URL(url, 'https://test.invalid');
+      if (options.method === 'POST') {
+        const row = JSON.parse(options.body); const isEvent = parsed.pathname.endsWith('/events');
+        const collection = isEvent ? remoteDocumentEvents : remoteDocuments;
+        const found = collection.find(item => item.id === row.id);
+        if (rejectWorkspaceWrites) return { ok: false, status: 503, json: async () => ({ error: 'テスト：帳票を保存できませんでした。' }) };
+        const original = remoteDocuments.find(item => item.id === (isEvent ? row.recordId : row.supersedes));
+        if (!found) {
+          assert.ok(!original || !remoteDocuments.some(item => item.supersedes === original.id));
+          const code = "import sys,json;sys.path.insert(0,'tests');from test_validation import app;v=json.load(sys.stdin);app.validate_transport_event(v['row'],v['original'],v['workspace']) if v['event'] else app.validate_transport_document(v['row'],v['workspace'],v['original'])";
+          const check = spawnSync('python3', ['-c', code], { input: JSON.stringify({ row, original: original ?? null, workspace: remote.value, event: isEvent }), encoding: 'utf8' });
+          assert.equal(check.status, 0, check.stderr); collection.push(row);
+        } else assert.deepEqual(found, row);
+        return { ok: true, json: async () => ({ [isEvent ? 'event' : 'record']: structuredClone(row) }) };
+      }
+      const identifier = parsed.searchParams.get('documentId');
+      return { ok: true, json: async () => identifier
+        ? { records: structuredClone(remoteDocuments.filter(row => row.documentId === identifier)), events: structuredClone(remoteDocumentEvents.filter(event => remoteDocuments.some(row => row.documentId === identifier && row.id === event.recordId))) }
+        : { records: structuredClone(remoteDocuments.filter(row => row.values.boardingAt.startsWith(parsed.searchParams.get('date')) && !remoteDocuments.some(other => other.supersedes === row.id))), hasMore: false } };
+    }
     if (url === '/api/files') {
       uploadedPhotos++;
       return rejectPhotoUpload ? { ok: false, json: async () => ({ error: 'テスト：保存できませんでした。' }) }
@@ -532,6 +556,49 @@ test('partner tariffs retain distinct money units, support edits, and stay isola
 });
 
 const testManager = { id: 'test-manager', code: 'TEST-001', name: 'テスト運行管理者', role: 'manager', officeName: '東京営業所', active: true, appointmentDate: '2020-01-01', qualification: 'テスト用' };
+
+test('transport documents preserve issued values, delivery logs, correction history and printable snapshots', async () => {
+  await setup({ configureWorkspace: value => {
+    value.staffMembers = [testManager];
+    value.bookings[0].start = '2027-01-01T09:00:00+09:00'; value.bookings[0].end = '2027-01-01T10:00:00+09:00';
+  } });
+  try {
+    await click('受書・運行指示書'); await fill(field('利用日'), '2027-01-01');
+    await fill(field('帳票を作る予約'), `bookings:${remote.value.bookings[0].id}`);
+    await click('受書を作成');
+    let form = one('form[aria-label="運送帳票の作成"]');
+    assert.equal(field('運賃（税込・円） ＊', form).value, '', 'tax-exclusive quote must not become a tax-inclusive fare');
+    const values = { issuerName: '確認用正式事業者', officeName: '確認用営業所', issuerAddress: '確認用住所', issuerPhone: '確認用連絡先', emergencyContact: '確認用緊急連絡先', serviceArea: '確認用営業区域', applicantName: '確認用申込者', applicantContact: 'test@example.com', operationStartPlace: '車庫', operationStartAt: '2027-01-01T08:00', operationEndPlace: '車庫', operationEndAt: '2027-01-01T11:00', boardingPlace: '乗車地', boardingAt: '2027-01-01T09:00', alightingPlace: '降車地', alightingAt: '2027-01-01T10:00', fare: '11000', charge: '0', safetyInstructions: '安全確認を行う' };
+    const { relevantFields } = require('../client/src/lib/transportDocuments.ts');
+    async function complete(kind) {
+      form = one('form[aria-label="運送帳票の作成"]');
+      await fill(field(kind === 'acceptance' ? '作成・交付担当者' : '指示する運行管理者', form), testManager.id);
+      for (const [key, label, , , required] of relevantFields(kind)) if (required) await fill(field(label + ' ＊', form), values[key]);
+      if (kind === 'acceptance') await fill(field('申込方法', form), 'phone');
+    }
+    await complete('acceptance'); await submit(form);
+    assert.equal(remoteDocuments.length, 1); assert.equal(remote.value.transportDocuments, undefined, 'documents are separate from the workspace');
+    const first = structuredClone(remoteDocuments[0]);
+    assert.match(one('.transport-document').textContent, /11,000円/);
+    let prints = 0; window.print = () => { prints++; }; await click('印刷・PDF保存'); assert.equal(prints, 1);
+    await click('交付した記録を残す');
+    form = one('form[aria-label="帳票の交付・指示記録"]');
+    await fill(field('作成・交付担当者', form), testManager.id);
+    await fill(field('交付・指示の方法', form), '紙で手渡し');
+    await fill(field('確認内容（指示書は運転者の確認・携行方法も記録）', form), '申込者への交付を確認');
+    await submit(form); assert.equal(remoteDocumentEvents.length, 1);
+    await click('理由を付けて訂正・取消'); form = one('form[aria-label="運送帳票の作成"]');
+    await fill(field('作成・交付担当者', form), testManager.id); await fill(field('運賃（税込・円） ＊', form), '12000'); await fill(field('訂正・取消の理由', form), '確定運賃への訂正');
+    await submit(form); assert.equal(remoteDocuments.length, 2); assert.deepEqual(remoteDocuments[0], first);
+    assert.match(one('.transport-document').textContent, /12,000円/);
+    await click('第1版'); assert.match(one('.transport-document').textContent, /旧版・訂正前/); assert.match(one('.transport-document').textContent, /11,000円/);
+    await click('帳票を閉じる'); await click('運行指示書を作成'); await complete('instruction'); await submit(form);
+    assert.equal(remoteDocuments.length, 3); assert.equal(remoteDocuments[2].kind, 'instruction');
+    assert.match(one('.transport-document').textContent, /安全確認を行う/); assert.match(one('.transport-document').textContent, /品川300/);
+    await click('帳票を閉じる'); await reload(); await click('受書・運行指示書'); await fill(field('利用日'), '2027-01-01');
+    assert.equal(document.querySelectorAll('article').length, 2, 'latest receipt and instruction remain after reload');
+  } finally { await unmount(); }
+});
 
 test('passenger daily inspection saves explicit results, review and correction with immutable originals', async () => {
   await setup({ configureWorkspace: value => { value.staffMembers = [{ ...testManager, maintenanceManager: true, maintenanceAppointmentDate: '2020-01-01' }]; } });
