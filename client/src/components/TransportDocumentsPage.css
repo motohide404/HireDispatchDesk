@@ -1,11 +1,80 @@
-.transport-document th, .transport-document td { overflow-wrap: anywhere; }
+/* One paper-sized sheet on screen and in print. No saved text is truncated. */
+#transport-document-print .document-panel { overflow-x: auto; }
+.transport-document {
+  box-sizing: border-box; width: 190mm; min-height: 265mm; margin: 16px auto;
+  padding: 0; display: flex; flex-direction: column; gap: 3.2mm;
+  background: #fff; color: #111; font: 9.5pt/1.45 "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.transport-document *, .transport-document *::before, .transport-document *::after { box-sizing: border-box; }
+.transport-document h1, .transport-document h2, .transport-document p, .transport-document dl, .transport-document dd { margin: 0; }
+.transport-document th, .transport-document td, .transport-document dd, .document-prose { overflow-wrap: anywhere; white-space: pre-wrap; }
+.document-heading { position: relative; border-bottom: 2.2px solid #111; padding-bottom: 3mm; }
+.document-heading h1 { font-size: 23pt; font-weight: 800; text-align: center; letter-spacing: .22em; padding: 1mm 0 2mm .22em; }
+.document-number, .document-issued { font-size: 8pt; text-align: right; overflow-wrap: anywhere; }
+.document-version { text-align: center; font-weight: 800; border: 1.5px solid #111; padding: 1mm; margin-top: 2mm !important; }
+.document-job { display: flex; gap: 3mm; border-bottom: 1px solid #777; padding: 0 0 2mm; }
+.document-job strong { flex: 0 0 12mm; }
+.document-job span { overflow-wrap: anywhere; }
+.document-block { border: 1.3px solid #222; break-inside: avoid; }
+.document-block h2, .document-confirmation h2 {
+  display: flex; align-items: center; gap: 2.5mm; font-size: 10pt; font-weight: 800;
+  border-bottom: 1px solid #222; background: #e9e9e9; padding: 1.5mm 2.5mm;
+}
+.document-block h2 > span { display: inline-block; background: #222; color: white; font-size: 7.5pt; padding: .3mm 1.1mm; letter-spacing: .03em; }
+.document-fields > div { display: grid; grid-template-columns: 29mm minmax(0, 1fr); border-top: 1px solid #aaa; min-height: 8mm; }
+.document-fields > div:first-child { border-top: 0; }
+.document-fields dt { font-size: 8.5pt; font-weight: 700; background: #f4f4f4; padding: 1.6mm 2.5mm; border-right: 1px solid #aaa; }
+.document-fields dd { padding: 1.6mm 2.5mm; }
+.document-client-name { font-weight: 700; font-size: 11pt; }
+.document-type { font-size: 7.5pt; font-weight: 400; border: 1px solid #777; padding: .3mm 1.5mm; margin-left: 3mm; vertical-align: middle; }
+.document-schedule { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9pt; }
+.document-schedule .schedule-label { width: 31mm; }
+.document-schedule .schedule-time { width: 51mm; }
+.document-schedule th, .document-schedule td { padding: 2mm 2.5mm; border-right: 1px solid #aaa; border-top: 1px solid #aaa; text-align: left; }
+.document-schedule thead th { padding-top: .8mm; padding-bottom: .8mm; font-size: 7.5pt; color: #333; background: #f4f4f4; }
+.document-schedule th:last-child, .document-schedule td:last-child { border-right: 0; }
+.document-schedule thead th { border-top: 0; }
+.document-schedule tbody th { font-size: 8.5pt; font-weight: 700; background: #f4f4f4; }
+.document-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.document-time-status { padding: .7mm 2.5mm; font-size: 7.5pt; text-align: right; border-bottom: 1px solid #aaa; }
+.document-fares { display: grid; grid-template-columns: 1fr 1fr 1.4fr; }
+.document-fares > p { display: flex; align-items: baseline; justify-content: space-between; gap: 2mm; padding: 3mm; border-right: 1px solid #aaa; }
+.document-fares strong { font-size: 12pt; white-space: nowrap; }
+.document-fares > .document-total { flex-wrap: wrap; border-right: 0; background: #f1f1f1; }
+.document-total strong { font-size: 17pt; }
+.document-total small { width: 100%; text-align: right; font-size: 7.5pt; }
+.document-prose { padding: 2mm 2.5mm; }
+.document-acceptance-footer { margin-top: auto; }
+.document-acceptance-statement { font-size: 10pt; font-weight: 700; margin-bottom: 2.5mm !important; }
+.document-issuer { border: 1.5px solid #222; }
+.document-issuer h2 { padding: 1.3mm 2.5mm; background: #e9e9e9; border-bottom: 1px solid #222; font-size: 9pt; font-weight: 800; }
+.document-issuer-name { font-size: 12pt; font-weight: 800; padding: 2mm 2.5mm; border-bottom: 1px solid #aaa; overflow-wrap: anywhere; }
+.document-issuer-name span { font-size: 9pt; font-weight: 400; display: block; }
+.document-issuer .document-fields > div { min-height: 0; }
+.document-issuer .document-fields dt, .document-issuer .document-fields dd { padding-top: 1mm; padding-bottom: 1mm; }
+.document-record-id { color: #555; font-size: 6.5pt; line-height: 1.2; overflow-wrap: anywhere; }
+.document-reason { font-size: 8pt; white-space: pre-wrap; overflow-wrap: anywhere; border-top: 1px dashed #777; padding-top: 2mm; }
+.document-company-line { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; font-size: 9pt; overflow-wrap: anywhere; }
+.document-crew { display: grid; grid-template-columns: 1fr 1fr; }
+.document-crew > div { padding: 2.5mm; }
+.document-crew > div:first-child { border-right: 1px solid #aaa; }
+.document-crew span { display: block; font-size: 8pt; color: #444; }
+.document-crew strong { display: block; font-size: 15pt; margin-top: 1mm; overflow-wrap: anywhere; }
+.document-safety { flex-grow: 1; }
+.document-safety .document-fields > div { min-height: 13mm; }
+.document-confirmation { border: 1.3px solid #222; }
+.document-confirmation > div { display: grid; grid-template-columns: 1fr 1fr; }
+.document-confirmation p { padding: 2.5mm; font-size: 8pt; }
+.document-confirmation p:first-child { border-right: 1px solid #aaa; }
+.document-confirmation p b, .document-confirmation p span { display: block; }
+.document-confirmation p span { margin-top: 2mm; }
 @media print {
-  @page { size: A4; margin: 12mm; }
+  @page { size: A4 portrait; margin: 10mm; }
+  html, body { margin: 0 !important; padding: 0 !important; background: white !important; }
   body:has(#transport-document-print) > *:not(#transport-document-print) { display: none !important; }
   #transport-document-print { position: static !important; overflow: visible !important; padding: 0 !important; background: white !important; }
   #transport-document-print .document-controls { display: none !important; }
-  #transport-document-print .document-panel { margin: 0 !important; padding: 0 !important; max-width: none !important; }
-  .transport-document { font-size: 10pt; color: black; }
-  .transport-document th, .transport-document td { border-color: #555; }
-  .transport-document tr { break-inside: avoid; }
+  #transport-document-print .document-panel { margin: 0 !important; padding: 0 !important; width: auto !important; max-width: none !important; overflow: visible !important; border-radius: 0 !important; }
+  .transport-document { margin: 0 !important; width: var(--document-print-width, 190mm); zoom: var(--document-print-scale, 1); break-inside: avoid; }
 }
