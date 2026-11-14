@@ -654,6 +654,9 @@ test('transport documents preserve issued values, delivery logs, correction hist
     assert.equal(instructionValues({ ...linkedJob, client: { name: '変更後の顧客' } }, {}, first).operationStartAt, '', 'a changed customer cannot silently reuse an earlier receipt');
     assert.equal(instructionValues({ ...linkedJob, client: { ...linkedJob.client, phone: '03-0000-0000' } }, {}, first).applicantContact, '03-0000-0000', 'current contact details take precedence');
     assert.match(one('.transport-document').textContent, /11,000円/);
+    assert.equal(document.querySelectorAll('.transport-document .document-schedule').length, 2);
+    assert.equal(document.querySelectorAll('.transport-document .document-crew').length, 0, 'receipts do not print driver or vehicle assignment');
+    assert.match(one('.document-total').textContent, /11,000円/);
     let prints = 0; window.print = () => { prints++; }; await click('印刷・PDF保存'); assert.equal(prints, 1);
     await click('交付した記録を残す');
     form = one('form[aria-label="帳票の交付・指示記録"]');
@@ -666,12 +669,17 @@ test('transport documents preserve issued values, delivery logs, correction hist
     await submit(form); assert.equal(remoteDocuments.length, 2); assert.deepEqual(remoteDocuments[0], first);
     assert.match(one('.transport-document').textContent, /12,000円/);
     await click('第1版'); assert.match(one('.transport-document').textContent, /旧版・訂正前/); assert.match(one('.transport-document').textContent, /11,000円/);
+    assert.equal(document.querySelectorAll('.transport-document .document-schedule').length, 2);
+    assert.equal(document.querySelectorAll('.transport-document .document-crew').length, 0, 'receipts do not print driver or vehicle assignment');
+    assert.match(one('.document-total').textContent, /11,000円/);
     await click('帳票を閉じる'); await click('運行指示書を作成'); form = one('form[aria-label="運送帳票の作成"]');
     assert.equal(form.querySelectorAll('input').length, 0, 'receipt supplies all required operation and customer fields');
     assert.equal(field('指示する運行管理者', form).value, testManager.id, 'a single eligible manager needs no repeated selection');
     assert.doesNotMatch(form.textContent, /事業者の正式名称|日時の確定状況|その他の事項/);
     await fill(field('追加の指示（ある場合だけ）', form), '安全確認を行う'); await submit(form);
     assert.equal(remoteDocuments.length, 3); assert.equal(remoteDocuments[2].kind, 'instruction');
+    assert.equal(document.querySelectorAll('.transport-document .document-crew').length, 1);
+    assert.match(one('.document-confirmation').textContent, /運行管理者.*指示.*運転者.*確認/);
     assert.match(one('.transport-document').textContent, /安全確認を行う/); assert.match(one('.transport-document').textContent, /品川300/);
     await click('帳票を閉じる'); await reload(); await click('受書・運行指示書'); await fill(field('利用日'), '2027-01-01');
     assert.equal(document.querySelectorAll('article').length, 2, 'latest receipt and instruction remain after reload');
