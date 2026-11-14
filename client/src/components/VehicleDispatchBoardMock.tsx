@@ -384,9 +384,10 @@ export function minutesOf(t: string): number {
 }
 
 export function overlap(aStart: string, aEnd: string, bStart: string, bEnd: string) {
-  const aS = new Date(aStart), aE = new Date(aEnd), bS = new Date(bStart), bE = new Date(bEnd);
-  if (aE <= aS) aE.setDate(aE.getDate() + 1);
-  if (bE <= bS) bE.setDate(bE.getDate() + 1);
+  const aS = new Date(aStart), bS = new Date(bStart);
+  let aE = new Date(aEnd), bE = new Date(bEnd);
+  if (aE <= aS) aE = new Date(aE.getTime() + DAY_MS);
+  if (bE <= bS) bE = new Date(bE.getTime() + DAY_MS);
   return aS < bE && bS < aE;
 }
 
@@ -401,7 +402,7 @@ export function rangeForDay(startISO: string, endISO: string, viewDate: string, 
   const clipS = s < vs ? vs : s;
   const clipE = e > ve ? ve : e;
   if (clipE <= clipS) {
-    return { left: 0, width: 0, clipL: leftClip, clipR: rightClip, overnight: e.getDate() !== s.getDate() };
+    return { left: 0, width: 0, clipL: leftClip, clipR: rightClip, overnight: toJstIso(e).slice(0, 10) !== toJstIso(s).slice(0, 10) };
   }
   const minutesFromStart = (clipS.getTime() - vs.getTime()) / 60000;
   const widthMin = (clipE.getTime() - clipS.getTime()) / 60000;
@@ -410,7 +411,7 @@ export function rangeForDay(startISO: string, endISO: string, viewDate: string, 
     width: Math.max(6, widthMin * pxPerMin),
     clipL: leftClip,
     clipR: rightClip,
-    overnight: e.getDate() !== s.getDate()
+    overnight: toJstIso(e).slice(0, 10) !== toJstIso(s).slice(0, 10)
   };
 }
 
@@ -607,9 +608,10 @@ export default function VehicleDispatchBoardMock({
     const base = viewDateObj.toLocaleDateString("ja-JP", {
       year: "numeric",
       month: "long",
-      day: "numeric"
+      day: "numeric",
+      timeZone: "Asia/Tokyo"
     });
-    const weekday = viewDateObj.toLocaleDateString("ja-JP", { weekday: "short" });
+    const weekday = viewDateObj.toLocaleDateString("ja-JP", { weekday: "short", timeZone: "Asia/Tokyo" });
     return `${base}（${weekday}）`;
   }, [viewDateObj]);
   const vehicleTableRows = useMemo(
@@ -720,9 +722,8 @@ export default function VehicleDispatchBoardMock({
     [drivers]
   );
   const shiftViewDate = (delta: number) => {
-    const next = new Date(viewDateObj);
-    next.setDate(next.getDate() + delta);
-    setViewDate(`${next.getFullYear()}-${pad2(next.getMonth() + 1)}-${pad2(next.getDate())}`);
+    const next = new Date(viewDateObj.getTime() + delta * DAY_MS);
+    setViewDate(toJstIso(next).slice(0, 10));
   };
   const resetJobDraft = () => {
     setJobDraft({
@@ -1988,7 +1989,6 @@ function AppDutyBlock({
   const showLeftFlag = Boolean((isOvernight && clipL) || overnightFromPreviousDay);
   const showRightFlag = Boolean((isOvernight && clipR) || overnightToNextDay);
   const overnightLabel = buildOvernightLabel(isOvernight, overnightFromPreviousDay, overnightToNextDay);
-  if (width <= 0) return null;
   const driver = duty.driverId != null ? driverLookup.get(duty.driverId) ?? null : null;
   const driverBadgeRef = useFlashOnChange<HTMLSpanElement>(driver ? `${driver.id}-${driver.name}` : "", 1500);
   const [driverDragOver, setDriverDragOver] = useState(false);
@@ -2174,6 +2174,7 @@ function AppDutyBlock({
     onClick();
   };
 
+  if (width <= 0) return null;
   return (
     <div
       className={`absolute top-2 h-12 bg-purple-500/25 border border-purple-300/60 rounded-lg px-2 py-1 text-[11px] text-purple-900 flex flex-col justify-between cursor-pointer ${
@@ -2322,7 +2323,6 @@ function BookingBlock({
   const showLeftFlag = Boolean((isOvernight && clipL) || overnightFromPreviousDay);
   const showRightFlag = Boolean((isOvernight && clipR) || overnightToNextDay);
   const overnightLabel = buildOvernightLabel(isOvernight, overnightFromPreviousDay, overnightToNextDay);
-  if (width <= 0) return null;
   const color = booking.status === "ok" ? "bg-green-500/80" : booking.status === "warn" ? "bg-yellow-500/80" : "bg-red-500/80";
   const ring = booking.status === "ok" ? "ring-green-400" : booking.status === "warn" ? "ring-yellow-400" : "ring-red-400";
   const driver = booking.driverId ? driverLookup.get(booking.driverId) ?? null : null;
@@ -2512,6 +2512,7 @@ function BookingBlock({
   const onResizePointerUp = (e: any) => finishResize(e, true);
   const onResizePointerCancel = (e: any) => finishResize(e, false);
 
+  if (width <= 0) return null;
   return (
     <div
       className={`absolute top-2 h-12 ${color} text-white text-[11px] rounded-lg px-2 py-1 shadow ring-2 ${ring} ${resizable ? "cursor-pointer" : "cursor-default"} ${isSelected ? "outline outline-2 outline-blue-500" : ""} ${over ? "ring-4 ring-blue-300" : ""}`}
@@ -3267,13 +3268,8 @@ function truncateNoteText(note: string, maxLength = 200): string {
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
 }
-function pad2(n: number) {
-  return String(n).padStart(2, "0");
-}
 function toJstIso(d: Date) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(
-    d.getMinutes()
-  )}:${pad2(d.getSeconds())}+09:00`;
+  return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 19) + '+09:00';
 }
 function formatMinutesLabel(minutes: number) {
   if (minutes <= 0) return "0分";
@@ -3299,6 +3295,5 @@ function summarizeFreeSlots(slots: Interval[], limit = 2) {
   return parts.join("、");
 }
 function fmt(s: string) {
-  const d = new Date(s);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return formatTimeInJst(Date.parse(s));
 }

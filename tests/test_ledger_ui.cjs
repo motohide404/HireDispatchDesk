@@ -284,6 +284,12 @@ test('future extra job fields survive actual board assignment and return to the 
       vehicleId: null, driverId: 1, amount: 12000, note: '引き継ぎメモ', extraFields: { '便名': 'TEST123', '担当窓口': '見本窓口' } });
   } });
   try {
+    const displayedDate = () => one('button[title="翌日へ"]').previousElementSibling.textContent.trim();
+    assert.equal(displayedDate(), day);
+    await act(async () => one('button[title="翌日へ"]').click());
+    assert.equal(displayedDate(), new Date(Date.parse(day + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10));
+    await act(async () => one('button[title="前日へ"]').click());
+    assert.equal(displayedDate(), day);
     await act(async () => {
       const event = new dom.window.Event('drop', { bubbles: true, cancelable: true });
       Object.defineProperty(event, 'dataTransfer', { value: { getData: type => type === 'text/x-job-id' ? 'future-fields-job' : '' } });
@@ -292,6 +298,8 @@ test('future extra job fields survive actual board assignment and return to the 
     await save();
     const booking = remote.value.bookings.find(item => item.title === '追加項目の配車テスト');
     assert.ok(booking);
+    assert.equal(booking.start, `${day}T18:00:00+09:00`);
+    assert.equal(booking.end, `${day}T19:00:00+09:00`);
     assert.equal(booking.extraFields['便名'], 'TEST123');
     assert.equal(booking.amount, 12000); assert.equal(booking.note, '引き継ぎメモ');
     assert.equal(booking.client.contactId, 'contact-002'); assert.equal(booking.client.email, 'job@example.com');
