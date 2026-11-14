@@ -147,6 +147,39 @@ async function choosePhoto(type = 'image/png', size = 'png') {
 after(async () => { await unmount(); dom.window.close(); });
 
 function jobCell(row, label) { return one(`[aria-label="${row}行目 ${label}"]`); }
+
+test('work entry customer and journey inputs appear in the receipt and issued information stays fixed', async () => {
+  await setup({ configureWorkspace: value => { value.staffMembers = [testManager]; } });
+  try {
+    await click('新規追加');
+    assert.deepEqual(Array.from(jobCell(1, '顧客区分').options).map(option => option.value), ['', '法人', '個人']);
+    for (const [label, value] of Object.entries({ '仕事名': '受書連動の確認', '申込者・契約相手の氏名又は名称': '確認用法人', '顧客区分': '法人', '利用日': '2027/01/01', '旅客の乗車時刻': '09:00', '旅客の降車時刻': '10:00', '連絡担当者': '確認用担当者', '電話番号': '03-0000-0000', 'メールアドレス': 'receipt@example.com', '旅客の乗車地点': '確認用空港', '旅客の降車地点': '確認用ホテル', '申込方法': 'web', 'アプリ・サイト・SNSの名称／その他の具体的方法': '確認用予約サイト', 'その他の事項': '確認用の備考' })) await fill(jobCell(1, label), value);
+    await click('登録内容を確認'); await click('この内容で登録する');
+    const job = remote.value.jobPool.find(row => row.title === '受書連動の確認');
+    assert.ok(job);
+    await reload(); await click('受書・運行指示書'); await fill(field('利用日'), '2027-01-01');
+    await fill(field('帳票を作る予約'), `jobPool:${job.id}`); await click('受書を作成');
+    const form = one('form[aria-label="運送帳票の作成"]');
+    assert.equal(field('顧客区分', form).value, '法人');
+    assert.equal(field('申込者・契約相手の氏名又は名称 ＊', form).value, '確認用法人');
+    assert.equal(field('申込者・契約相手の連絡先 ＊', form).value, '確認用担当者 ／ 03-0000-0000 ／ receipt@example.com');
+    assert.equal(field('旅客の乗車地点 ＊', form).value, '確認用空港');
+    assert.equal(field('旅客の降車地点 ＊', form).value, '確認用ホテル');
+    assert.equal(field('申込方法', form).value, 'web');
+    assert.equal(field('その他の事項', form).value, '確認用の備考');
+    assert.equal(field('運行開始日時 ＊', form).value, '', 'deadhead times are not passenger times');
+    const missing = { '事業者の正式名称 ＊': '確認用事業者', '営業所名 ＊': '確認用営業所', '事業者の住所 ＊': '確認用住所', '事業者の電話番号・連絡先 ＊': '03-1111-1111', '緊急時の連絡先 ＊': '03-1111-2222', '営業区域 ＊': '確認用区域', '運行開始地点（車庫など・回送を含む） ＊': '確認用車庫', '運行終了地点（車庫など・回送を含む） ＊': '確認用車庫', '運行開始日時 ＊': '2027-01-01T08:00', '運行終了日時 ＊': '2027-01-01T11:00', '運賃（税込・円） ＊': '11000', '料金（税込・円、なければ0） ＊': '0' };
+    for (const [label, value] of Object.entries(missing)) await fill(field(label, form), value);
+    await submit(form);
+    assert.equal(remoteDocuments.length, 1);
+    assert.match(one('.transport-document').textContent, /確認用担当者/);
+    const issued = structuredClone(remoteDocuments[0]);
+    await act(async () => { remote.value.jobPool.find(row => row.id === job.id).client.name = '変更後の顧客名'; await store.initializeStore(createSeed()); });
+    assert.deepEqual(remoteDocuments[0], issued);
+    assert.match(one('.transport-document').textContent, /確認用法人/);
+  } finally { await unmount(); }
+});
+
 async function pasteCells(control, text) {
   await act(async () => {
     const event = new dom.window.Event('paste', { bubbles: true, cancelable: true });
@@ -163,9 +196,9 @@ test('spreadsheet jobs retain drafts across pages, confirm before saving, and pe
     await click('仕事登録');
     const { JOB_COLUMNS } = require('../client/src/lib/jobEntry.ts');
     const header = JOB_COLUMNS.map(column => column.label).join('\t');
-    const first = ['表入力テストA', '見本ホテル', 'ホテル', '2026/11/14', '18:00', '', '19:00', 'セダン', 'VH-00011', 'DRV-001', '0', '集合場所のメモ', '見本窓口', '090-0000-0000', ''];
+    const first = ['表入力テストA', '見本ホテル', '法人', '2026/11/14', '18:00', '', '19:00', 'セダン', 'VH-00011', 'DRV-001', '0', '集合場所のメモ', '見本窓口', '090-0000-0000', ''];
     const second = ['表入力テストB', '見本旅行', '法人', '2026/11/14', '23:00', '2026/11/15', '01:00', 'ジャンボハイヤー', '', '', '', '"メモ1行目\nメモ2行目"', '', '', 'demo@example.com'];
-    await pasteCells(jobCell(1, '仕事名'), header + '\r\n' + first.join('\t') + '\r\n' + second.join('\t') + '\r\n');
+    await pasteCells(jobCell(1, '仕事名'), header + '\r\n' + first.concat(Array(JOB_COLUMNS.length - first.length).fill('')).join('\t') + '\r\n' + second.concat(Array(JOB_COLUMNS.length - second.length).fill('')).join('\t') + '\r\n');
     assert.equal(jobCell(1, '仕事名').value, '表入力テストA');
     assert.equal(jobCell(2, '終了日').value, '2026-11-15');
     assert.equal(remote.value.jobPool.length, originalCount);
@@ -179,7 +212,7 @@ test('spreadsheet jobs retain drafts across pages, confirm before saving, and pe
     assert.match(one('[aria-label="仕事の登録確認"]').textContent, /0円（税抜）/);
     assert.equal(remote.value.jobPool.length, originalCount);
     await click('入力に戻る');
-    assert.equal(jobCell(1, 'メモ').value, '集合場所のメモ');
+    assert.equal(jobCell(1, 'その他の事項').value, '集合場所のメモ');
     await click('登録内容を確認'); await click('この内容で登録する');
     assert.match(one('[aria-label="仕事登録画面"]').textContent, /2件の仕事を登録しました/);
     assert.equal(remote.value.jobPool.length, originalCount + 2);
@@ -207,16 +240,16 @@ test('spreadsheet validation highlights the cells and an out-of-range paste leav
     const original = JSON.stringify(remote);
     await click('仕事登録');
     await fill(jobCell(1, '仕事名'), '入力不足テスト');
-    await fill(jobCell(1, '取引先・お客様名'), '見本利用者');
+    await fill(jobCell(1, '申込者・契約相手の氏名又は名称'), '見本利用者');
     await click('登録内容を確認');
-    assert.equal(jobCell(1, '開始').getAttribute('aria-invalid'), 'true');
+    assert.equal(jobCell(1, '旅客の乗車時刻').getAttribute('aria-invalid'), 'true');
     assert.equal(document.querySelector('[aria-label="仕事の登録確認"]'), null);
     assert.match(one('[aria-label="仕事登録画面"]').textContent, /1行に確認が必要/);
-    await pasteCells(jobCell(1, 'メールアドレス'), '列超過\t上書き不可');
+    await pasteCells(jobCell(1, 'アプリ・サイト・SNSの名称／その他の具体的方法'), '列超過\t上書き不可');
     assert.match(one('[aria-label="仕事登録画面"]').textContent, /列数が表の範囲を超え/);
     assert.equal(jobCell(1, '仕事名').value, '入力不足テスト');
-    assert.equal(jobCell(1, 'メモ').value, '');
-    await fill(jobCell(1, '開始'), '09:00'); await fill(jobCell(1, '終了'), '10:00');
+    assert.equal(jobCell(1, 'その他の事項').value, '');
+    await fill(jobCell(1, '旅客の乗車時刻'), '09:00'); await fill(jobCell(1, '旅客の降車時刻'), '10:00');
     await fill(jobCell(1, '電話番号'), '090-0000-0000');
     const beforeRows = document.querySelectorAll('table[aria-label="仕事入力表"] tbody tr').length;
     await click('＋ 行を追加');
@@ -263,10 +296,11 @@ test('customer picker links the office and person, refreshes ledger defaults and
     await fill(field('拠点', dialog), 'office-001');
     await fill(field('担当者', dialog), 'contact-002');
     await click('この窓口を選ぶ', dialog);
-    assert.equal(jobCell(1, '取引先・お客様名').value, 'サンライズツアーズ');
-    assert.equal(jobCell(1, '取引先・お客様名').readOnly, true);
+    assert.equal(jobCell(1, '申込者・契約相手の氏名又は名称').value, '株式会社サンライズツアーズ');
+    assert.equal(jobCell(1, '申込者・契約相手の氏名又は名称').readOnly, true);
     assert.equal(jobCell(1, '電話番号').value, '0476-22-2222');
     assert.equal(jobCell(1, '連絡担当者').value, '田中 亮');
+    assert.equal(one('[aria-label="1行目 申込者を変更"]').textContent, '変更');
     await fill(jobCell(1, '電話番号'), '090-0000-9999');
     await act(async () => {
       remote.value.contacts.find(item => item.id === 'contact-002').email = 'updated@example.com';
@@ -313,7 +347,7 @@ test('future extra job fields survive actual board assignment and return to the 
   await setup({ configureWorkspace(value) {
     value.jobPool.push({ id: 'future-fields-job', title: '追加項目の配車テスト', client: { type: '法人', name: '見本取引先', source: 'ledger', partnerId: 'partner-001', officeId: 'office-001', contactId: 'contact-002', officeName: '成田空港営業所', contactName: '当日の窓口', phone: '090-0000-0000', email: 'job@example.com' },
       start: `${day}T18:00:00+09:00`, end: `${day}T19:00:00+09:00`, preferClass: 'sedan',
-      vehicleId: null, driverId: 1, amount: 12000, note: '引き継ぎメモ', extraFields: { '便名': 'TEST123', '担当窓口': '見本窓口' } });
+      vehicleId: null, driverId: 1, amount: 12000, note: '引き継ぎメモ', transportDetails: { boardingPlace: '見本空港', alightingPlace: '見本ホテル', applicationMethod: 'phone' }, extraFields: { '便名': 'TEST123', '担当窓口': '見本窓口' } });
   } });
   try {
     const displayedDate = () => one('button[title="翌日へ"]').previousElementSibling.textContent.trim();
@@ -333,6 +367,7 @@ test('future extra job fields survive actual board assignment and return to the 
     assert.equal(booking.start, `${day}T18:00:00+09:00`);
     assert.equal(booking.end, `${day}T19:00:00+09:00`);
     assert.equal(booking.extraFields['便名'], 'TEST123');
+    assert.equal(booking.transportDetails.boardingPlace, '見本空港');
     assert.equal(booking.amount, 12000); assert.equal(booking.note, '引き継ぎメモ');
     assert.equal(booking.client.contactId, 'contact-002'); assert.equal(booking.client.email, 'job@example.com');
     assert.equal(remote.value.jobPool.some(item => item.id === 'future-fields-job'), false);
@@ -347,6 +382,7 @@ test('future extra job fields survive actual board assignment and return to the 
     await click('ジョブプールへ戻す'); await save();
     const returned = remote.value.jobPool.find(item => item.title === '追加項目の配車テスト');
     assert.equal(returned.extraFields['便名'], 'TEST123');
+    assert.equal(returned.transportDetails.alightingPlace, '見本ホテル');
     assert.equal(returned.extraFields['担当窓口'], '見本窓口');
     assert.deepEqual(returned.client, booking.client);
   } finally { await unmount(); }

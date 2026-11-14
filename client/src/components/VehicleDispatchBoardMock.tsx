@@ -1,3 +1,4 @@
+import { customerTypes, sharedLabels, type JobTransportDetails } from '../lib/jobDocumentFields';
 import { usePersistentState } from "../lib/store";
 import { today } from "../data/seed";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -19,7 +20,7 @@ function JobContactDetails({ client }: { client: JobClient }) {
   if (!client || (!client.phone && !client.email && !client.partnerId)) return null;
   const currentPhone = current?.contact?.phone || current?.office?.phone || current?.partner.phone;
   const currentEmail = current?.contact?.email || current?.office?.email || current?.partner.email;
-  const changed = current && (currentPhone !== client.phone || currentEmail !== client.email || (current.contact?.name ?? '') !== (client.contactName ?? '') || (current.office?.displayName ?? '') !== (client.officeName ?? '') || current.partner.displayName !== client.name);
+  const changed = current && (currentPhone !== client.phone || currentEmail !== client.email || (current.contact?.name ?? '') !== (client.contactName ?? '') || (current.office?.displayName ?? '') !== (client.officeName ?? '') || (current.partner.officialName || current.partner.displayName) !== client.name);
   const channels = (phone?: string, email?: string) => <>
     {phone && <div>電話：<a href={`tel:${phone.replace(/[^\d+]/g, '')}`} className="text-emerald-800 underline">{phone}</a></div>}
     {email && <div className="break-all">メール：<a href={`mailto:${encodeURIComponent(email)}`} className="text-emerald-800 underline">{email}</a></div>}
@@ -195,6 +196,7 @@ type BoardBooking = {
   note?: string;
   attachments?: BookingAttachment[];
   extraFields?: Record<string, string>;
+  transportDetails?: JobTransportDetails;
   is_overnight: boolean;
   overnight_from_previous_day?: boolean;
   overnight_to_next_day?: boolean;
@@ -312,6 +314,7 @@ type UnassignedJob = {
   note?: string;
   attachments?: BookingAttachment[];
   extraFields?: Record<string, string>;
+  transportDetails?: JobTransportDetails;
 };
 
 const UNASSIGNED_JOBS: UnassignedJob[] = [
@@ -467,7 +470,8 @@ function bookingToJob(b: BoardBooking, vehicleLookup: Map<number, VehicleInfo>):
     amount: b.amount,
     note: b.note,
     attachments: b.attachments,
-    extraFields: b.extraFields
+    extraFields: b.extraFields,
+    transportDetails: b.transportDetails
   };
 }
 
@@ -579,7 +583,7 @@ export default function VehicleDispatchBoardMock({
   const [jobFormOpen, setJobFormOpen] = useState(false);
   const [jobDraft, setJobDraft] = useState<JobDraft>({
     title: "",
-    clientType: "個人",
+    clientType: customerTypes[0],
     clientName: "",
     startTime: "09:00",
     endTime: "10:00",
@@ -728,7 +732,7 @@ export default function VehicleDispatchBoardMock({
   const resetJobDraft = () => {
     setJobDraft({
       title: "",
-      clientType: "個人",
+      clientType: customerTypes[0],
       clientName: "",
       startTime: "09:00",
       endTime: "10:00",
@@ -740,6 +744,7 @@ export default function VehicleDispatchBoardMock({
     });
   };
   const openJobForm = () => {
+    if (onOpenJobEntry) { onOpenJobEntry(); return; }
     resetJobDraft();
     setJobFormOpen(true);
   };
@@ -1232,7 +1237,8 @@ export default function VehicleDispatchBoardMock({
       note: job.note,
       amount: job.amount,
       attachments: job.attachments,
-      extraFields: job.extraFields
+      extraFields: job.extraFields,
+      transportDetails: job.transportDetails
     };
     const overnightMeta = computeOvernightInfo(baseBooking.start, baseBooking.end, viewDate);
     const newBooking: BoardBooking = { ...baseBooking, ...overnightMeta };
@@ -2681,17 +2687,12 @@ function JobFormModal({
                 value={draft.clientType}
                 onChange={(e) => onChange("clientType", e.target.value)}
               >
-                <option value="個人">個人</option>
-                <option value="法人">法人</option>
-                <option value="ホテル">ホテル</option>
-                <option value="旅行代理店">旅行代理店</option>
-                <option value="アプリ">アプリ</option>
-                <option value="その他">その他</option>
+                {customerTypes.map(type => <option key={type} value={type}>{type}</option>)}
               </select>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="job-client-name">
-                顧客名
+                {sharedLabels.clientName}
               </label>
               <input
                 id="job-client-name"

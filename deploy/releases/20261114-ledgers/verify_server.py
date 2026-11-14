@@ -132,7 +132,8 @@ def main():
             changed['jobPool'].append({'id': job_id, 'title': '未来日予約の保存検証',
                                        'client': {'type': '個人', 'name': '検証用予約者', 'source': 'manual', 'email': 'test@example.com'},
                                        'start': day + 'T09:00:00+09:00', 'end': day + 'T10:00:00+09:00',
-                                       'vehicleId': None, 'driverId': None, 'amount': 0, 'note': '複製DB内だけの検証'})
+                                       'vehicleId': None, 'driverId': None, 'amount': 0, 'note': '複製DB内だけの検証',
+                                       'transportDetails': {'boardingPlace': '乗車地', 'alightingPlace': '降車地', 'applicationMethod': 'web', 'methodDetail': '検証用予約サイト'}})
         assessment = {'id': 'release-test-' + secrets.token_hex(6), 'type': '一般診断',
                       'assessedAt': today.isoformat(), 'institution': 'リリース検証用',
                       'nextDueAt': (today + timedelta(days=365)).isoformat()}
@@ -262,19 +263,17 @@ def main():
         # Long-lived documents have separate append-only tables, outside the
         # shared workspace size limit. All write checks stay in this clone.
         source_job = next(row for row in changed['jobPool'] if row['id'] == future_job_ids[0])
-        source_job.update(driverId=driver['id'], vehicleId=vehicle['id'])
-        raw, _ = call('/api/workspace', {'revision': final_revision, 'value': changed}, method='PUT')
-        final_revision = json.loads(raw)['revision']
+        assert source_job['driverId'] is None and source_job['vehicleId'] is None
         values = {key: '' for key in app.TRANSPORT_FIELDS}
         day = source_job['start'][:10]
         values.update(issuerName='検証専用事業者', officeName='検証用営業所', issuerAddress='検証用住所',
                       issuerPhone='検証用連絡先', emergencyContact='検証用緊急連絡先', serviceArea='検証用区域',
-                      applicantName='検証用申込者', applicantContact='test@example.com',
+                      applicantType=source_job['client']['type'], applicantName=source_job['client']['name'], applicantContact=source_job['client']['email'],
                       operationStartPlace='車庫', operationStartAt=day + 'T08:00:00+09:00',
                       boardingPlace='乗車地', boardingAt=day + 'T09:00:00+09:00',
                       alightingPlace='降車地', alightingAt=day + 'T10:00:00+09:00',
                       operationEndPlace='車庫', operationEndAt=day + 'T11:00:00+09:00',
-                      fare='11000', charge='0', applicationMethod='phone', priceStatus='fixed', timeStatus='planned',
+                      fare='11000', charge='0', applicationMethod=source_job['transportDetails']['applicationMethod'], methodDetail=source_job['transportDetails']['methodDetail'], priceStatus='fixed', timeStatus='planned',
                       safetyInstructions='検証用の安全指示')
         document_id = duty_id + '-acceptance'
         acceptance = {'id': document_id, 'documentId': document_id, 'number': document_id,
@@ -316,6 +315,13 @@ def main():
         call('/api/transport-documents/settings', {**payload, 'profile': {'depotPlace': '古い設定からの上書き'}}, method='POST', expected=409)
         raw, _ = call('/api/transport-documents?documentId=' + document_id)
         assert json.loads(raw)['records'] == [acceptance, corrected]
+        source_job.update(driverId=driver['id'], vehicleId=vehicle['id'])
+        raw, _ = call('/api/workspace', {'revision': final_revision, 'value': changed}, method='PUT')
+        final_revision = json.loads(raw)['revision']
+        raw, _ = call('/api/transport-documents?documentId=' + document_id)
+        assert json.loads(raw)['records'] == [acceptance, corrected], 'assignment must not rewrite issued receipts'
+        assert 'driverName' not in acceptance and 'vehiclePlate' not in acceptance
+        checks.append('unassigned_receipt_shared_customer_journey_fields_and_later_assignment_keep_issued_snapshot')
         instruction_id = duty_id + '-instruction'
         instruction = {**copy.deepcopy(acceptance), 'id': instruction_id, 'documentId': instruction_id,
                        'number': instruction_id, 'kind': 'instruction', 'driverId': driver['id'],

@@ -7,9 +7,11 @@ const ts = require('../client/node_modules/typescript');
 const transpile = path => ts.transpileModule(fs.readFileSync(path, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
 const vehiclesModule = { exports: {} };
 vm.runInNewContext(transpile('client/src/data/vehicles.ts'), vehiclesModule);
-const customersModule = { exports: {} };
+const sharedModule = { exports: {} };
+vm.runInNewContext(transpile('client/src/lib/jobDocumentFields.ts'), sharedModule);
+const customersModule = { exports: {}, require: () => sharedModule.exports };
 vm.runInNewContext(transpile('client/src/lib/jobCustomers.ts'), customersModule);
-const context = { exports: {}, crypto: { randomUUID: () => crypto.randomUUID() }, require: name => name.endsWith('jobCustomers') ? customersModule.exports : vehiclesModule.exports };
+const context = { exports: {}, crypto: { randomUUID: () => crypto.randomUUID() }, require: name => name.endsWith('jobCustomers') ? customersModule.exports : name.endsWith('jobDocumentFields') ? sharedModule.exports : vehiclesModule.exports };
 vm.runInNewContext(transpile('client/src/lib/jobEntry.ts'), context);
 const { JOB_COLUMNS, createJobRow, hasJobInput, validateJobRows, parseSpreadsheet, pasteJobCells, amountValue, dateValue, timeValue } = context.exports;
 const drivers = [{ id: 1, name: 'テスト乗務員', code: 'TEST-001', status: 'active' }, { id: 2, name: '退職テスト', code: 'TEST-002', status: 'archived' }];
@@ -27,7 +29,7 @@ const check = (input, ledger = customers) => validateJobRows([input], drivers, v
 test('existing customer matching uses stable ledger IDs and new customers require at least one usable contact channel', () => {
   const matched = check(row({ clientName: '株式会社見本ホテル', phone: '' }));
   assert.equal(matched.job.client.partnerId, 'p1');
-  assert.equal(matched.job.client.name, '見本ホテル');
+  assert.equal(matched.job.client.name, '株式会社見本ホテル');
   assert.equal(matched.job.client.phone, '03-0000-0001');
   assert.equal(matched.job.client.source, 'ledger');
   assert.equal(check(row({ clientName: 'TEST-C002', phone: '+81 (90) 0000-1234' })).job.client.phone, '+81 (90) 0000-1234');
@@ -38,6 +40,36 @@ test('existing customer matching uses stable ledger IDs and new customers requir
   const duplicateLedger = { ...customers, partners: [...customers.partners, { ...customers.partners[0], id: 'p3', internalId: 'TEST-C003' }] };
   assert.match(check(row({ clientName: '見本ホテル' }), duplicateLedger).errors.clientName, /同じ名前/);
   assert.equal(check(row({ clientName: 'TEST-C001' }), duplicateLedger).job.client.partnerId, 'p1');
+});
+
+test('customer types are corporate or individual and ledger industry is separate', () => {
+  assert.equal(check(row({ clientType: '法人' })).job.client.type, '法人');
+  assert.equal(check(row({ clientType: '個人' })).job.client.type, '個人');
+  for (const type of ['ホテル', '旅行会社', '代理店', 'その他', '']) {
+    assert.ok(check(row({ clientType: type })).errors.clientType);
+  }
+  const linked = check(row({ clientName: '見本旅行' }));
+  assert.equal(linked.job.client.type, '法人');
+  assert.equal(customers.partners[1].category, '旅行会社');
+});
+
+test('shared journey and contact fields are prepared for the receipt without guessing operation times or tax', () => {
+  const job = check(row({ clientType: '法人', contactName: '見本担当', email: 'person@example.com', boardingPlace: '見本空港', alightingPlace: '見本ホテル', applicationMethod: 'ウェブサイト', methodDetail: '見本予約サイト', note: '確認用備考', amount: '10000' })).job;
+  const duty = { exports: {} };
+  vm.runInNewContext(transpile('client/src/lib/dutyLog.ts'), { ...duty, require: () => ({}) });
+  const docs = { exports: {}, require: name => name.endsWith('jobDocumentFields') ? sharedModule.exports : duty.exports };
+  vm.runInNewContext(transpile('client/src/lib/transportDocuments.ts'), docs);
+  const values = docs.exports.newDocumentValues({ ...job, collection: 'jobPool' });
+  assert.equal(values.applicantName, job.client.name);
+  assert.equal(values.applicantType, '法人');
+  assert.equal(values.applicantContact, '見本担当 ／ 090-0000-0000 ／ person@example.com');
+  assert.equal(values.boardingPlace, '見本空港'); assert.equal(values.alightingPlace, '見本ホテル');
+  assert.equal(values.applicationMethod, 'web'); assert.equal(values.methodDetail, '見本予約サイト');
+  assert.equal(values.notes, '確認用備考');
+  assert.equal(values.boardingAt, '2026-11-14T09:00');
+  assert.equal(values.operationStartAt, ''); assert.equal(values.fare, '');
+  assert.ok(check(row({ applicationMethod: 'web' })).errors.methodDetail);
+  assert.ok(check(row({ applicationMethod: '存在しない方法' })).errors.applicationMethod);
 });
 
 test('office and person selection follows the right ledger records, refreshes drafts and preserves job-specific overrides', () => {
@@ -60,7 +92,7 @@ test('office and person selection follows the right ledger records, refreshes dr
 test('pasting another customer over a linked row clears the previous contact and preserves the job fields', () => {
   const { selectJobCustomer, resolveJobCustomer, unlinkJobCustomer } = customersModule.exports;
   const selected = selectJobCustomer(row(), { partnerId: 'p1', officeId: 'o1', contactId: 'c1' }, customers);
-  const pasted = pasteJobCells([selected], 0, 1, '見本旅行\t旅行会社', '2026-11-14')[0];
+  const pasted = pasteJobCells([selected], 0, 1, '見本旅行\t法人', '2026-11-14')[0];
   const changed = resolveJobCustomer(pasted, customers).row;
   assert.equal(changed.customer.partnerId, 'p2');
   assert.equal(changed.values.phone, '03-0000-0002');
@@ -118,7 +150,7 @@ test('multi-cell paste grows rows, uses column definitions, skips full headers a
   const header = JOB_COLUMNS.map(column => column.label).join('\t');
   const first = ['テストA', '取引先A', '法人', '2026/11/14', '9:00', '', '10:00', 'ワゴン', '', '', '0', 'メモ', '', '090-0000-0000', ''];
   const second = ['テストB', '取引先B', '個人', '2026/11/15', '11:00', '', '12:00', '', '', '', '', '', '', '', 'test@example.com'];
-  const result = pasteJobCells(rows, 0, 0, header + '\r\n' + first.join('\t') + '\r\n' + second.join('\t') + '\r\n', '2026-11-14');
+  const result = pasteJobCells(rows, 0, 0, header + '\r\n' + first.concat(Array(JOB_COLUMNS.length - first.length).fill('')).join('\t') + '\r\n' + second.concat(Array(JOB_COLUMNS.length - second.length).fill('')).join('\t') + '\r\n', '2026-11-14');
   assert.equal(result.length, 2); assert.equal(result[0].id, rows[0].id);
   assert.equal(result[1].values.startDate, '2026-11-15');
   assert.equal(validateJobRows(result, drivers, vehicles).filter(item => item.job).length, 2);
