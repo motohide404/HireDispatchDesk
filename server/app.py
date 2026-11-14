@@ -531,6 +531,23 @@ TRANSPORT_LONG_FIELDS = {'chargeDetails', 'priceBasis', 'route', 'safetyInstruct
 TRANSPORT_TIMES = ('operationStartAt', 'boardingAt', 'alightingAt', 'operationEndAt')
 
 
+def validate_job_transport(row):
+    if 'transportDetails' not in row:
+        return  # Older jobs retain their original customer categories.
+    details = row['transportDetails']
+    if not isinstance(details, dict) or set(details) - {'boardingPlace', 'alightingPlace', 'applicationMethod', 'methodDetail'}:
+        raise ValueError('受書と共通の予約情報を確認してください。')
+    if (row.get('client') or {}).get('type') not in ('法人', '個人'):
+        raise ValueError('顧客区分は法人または個人を選んでください。')
+    for key in details:
+        ledger_text(details[key], 200, '受書と共通の予約情報')
+    method = details.get('applicationMethod')
+    if method and method not in ('phone', 'visit', 'email', 'app', 'web', 'sns', 'other'):
+        raise ValueError('申込方法を確認してください。')
+    if method in ('app', 'web', 'sns', 'other') and not (details.get('methodDetail') or '').strip():
+        raise ValueError('申込先の名称・具体的方法を入力してください。')
+
+
 def transport_staff(identifier, name, kind, workspace, at):
     member = next((row for row in workspace.get('staffMembers', []) if row['id'] == identifier), None)
     if not member or not member['active'] or member['name'] != name:
@@ -562,8 +579,11 @@ def validate_transport_document(row, workspace, original=None):
         raise ValueError('未来の作成実績は記録できません。')
     transport_staff(row['issuerStaffId'], row['issuerStaffName'], kind, workspace, created)
     values = row.get('values')
-    if not isinstance(values, dict) or set(values) != TRANSPORT_FIELDS:
+    if not isinstance(values, dict) or set(values) - {'applicantType'} != TRANSPORT_FIELDS:
         raise ValueError('帳票の記載項目をすべて指定してください。')
+    ledger_text(values.get('applicantType'), 200, '顧客区分')
+    if values.get('applicantType') and values['applicantType'] not in ('法人', '個人'):
+        raise ValueError('顧客区分は法人または個人を選んでください。')
     required = {'applicantName', 'applicantContact',
                 'operationStartPlace', 'operationEndPlace', 'boardingPlace', 'alightingPlace', *TRANSPORT_TIMES}
     if kind == 'acceptance':
@@ -767,6 +787,7 @@ def validate(value):
     for row in scheduled + value['jobPool']:
         interval(row)
         validate_job_customer(row.get('client'), value)
+        validate_job_transport(row)
         if row.get('driverId') is not None and row['driverId'] not in drivers:
             raise ValueError('運転者が見つかりません。')
         if row.get('vehicleId') is not None and row['vehicleId'] not in vehicles:

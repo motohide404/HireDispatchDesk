@@ -60,6 +60,20 @@ class ValidationTests(unittest.TestCase):
     def test_valid_booking(self):
         app.validate(sample())
 
+    def test_shared_job_fields_validate_without_reclassifying_existing_jobs(self):
+        value = self.customer_workspace()
+        job = value['bookings'][0]
+        job['transportDetails'] = {'boardingPlace': '見本空港', 'alightingPlace': '見本ホテル', 'applicationMethod': 'web', 'methodDetail': '見本サイト'}
+        app.validate(value)
+        for patch in ({'applicationMethod': 'invalid'}, {'boardingPlace': 'x' * 201}, {'methodDetail': ''}, {'unknown': 'value'}):
+            invalid = copy.deepcopy(value)
+            invalid['bookings'][0]['transportDetails'].update(patch)
+            with self.subTest(patch=patch), self.assertRaises(ValueError): app.validate(invalid)
+        job['client']['type'] = '旅行会社'
+        with self.assertRaises(ValueError): app.validate(value)
+        del job['transportDetails']
+        app.validate(value)
+
     def test_same_vehicle_overlap(self):
         value = sample()
         value['appDuties'] = [{**value['bookings'][0], 'id': 'duty', 'driverId': 2}]

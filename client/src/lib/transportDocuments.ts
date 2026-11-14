@@ -1,7 +1,8 @@
+import { applicationMethods, customerTypes, sharedLabels, type JobTransportDetails } from './jobDocumentFields';
+export { applicationMethods } from './jobDocumentFields';
 import { isoTime, localTime } from './dutyLog';
 export type DocumentKind = 'acceptance' | 'instruction';
 export const documentNames = { acceptance: '運送引受書', instruction: '運行指示書' };
-export const applicationMethods = { phone: '電話', visit: '来店', email: '電子メール', app: '配車アプリ', web: 'ウェブサイト', sns: 'SNS', other: 'その他' };
 export const documentFields = [
   ['issuerName', '事業者の正式名称', 'text', 'both', false],
   ['officeName', '営業所名', 'text', 'both', false],
@@ -9,16 +10,17 @@ export const documentFields = [
   ['issuerPhone', '事業者の電話番号・連絡先', 'text', 'both', false],
   ['emergencyContact', '緊急時の連絡先', 'text', 'acceptance', true],
   ['serviceArea', '営業区域', 'text', 'acceptance', true],
-  ['applicantName', '申込者・契約相手の氏名又は名称', 'text', 'both', true],
+  ['applicantType', sharedLabels.clientType, 'text', 'both', false],
+  ['applicantName', sharedLabels.clientName, 'text', 'both', true],
   ['applicantContact', '申込者・契約相手の連絡先', 'text', 'both', true],
-  ['methodDetail', 'アプリ・サイト・SNSの名称／その他の具体的方法', 'text', 'acceptance', false],
+  ['methodDetail', sharedLabels.methodDetail, 'text', 'acceptance', false],
   ['operationStartPlace', '運行開始地点（車庫など・回送を含む）', 'text', 'both', true],
   ['operationStartAt', '運行開始日時', 'datetime-local', 'both', true],
   ['operationEndPlace', '運行終了地点（車庫など・回送を含む）', 'text', 'both', true],
   ['operationEndAt', '運行終了日時', 'datetime-local', 'both', true],
-  ['boardingPlace', '旅客の乗車地点', 'text', 'both', false],
+  ['boardingPlace', sharedLabels.boardingPlace, 'text', 'both', false],
   ['boardingAt', '旅客の乗車日時', 'datetime-local', 'both', true],
-  ['alightingPlace', '旅客の降車地点', 'text', 'both', false],
+  ['alightingPlace', sharedLabels.alightingPlace, 'text', 'both', false],
   ['alightingAt', '旅客の降車日時', 'datetime-local', 'both', true],
   ['fare', '運賃（税込・円）', 'money', 'acceptance', true],
   ['charge', '料金（税込・円、なければ0）', 'money', 'acceptance', true],
@@ -26,11 +28,11 @@ export const documentFields = [
   ['priceBasis', '概算額の算出根拠', 'textarea', 'acceptance', false],
   ['route', '経路・立寄り地・待機場所', 'textarea', 'instruction', false],
   ['safetyInstructions', '追加の指示（ある場合だけ）', 'textarea', 'instruction', false],
-  ['notes', 'その他の事項', 'textarea', 'both', false],
+  ['notes', sharedLabels.note, 'textarea', 'both', false],
 ] as const;
 export type DocumentField = typeof documentFields[number][0];
 export type DocumentValues = Record<DocumentField, string> & { applicationMethod: string; priceStatus: 'fixed' | 'estimate'; timeStatus: 'planned' | 'confirmed' };
-export type DocumentJob = { collection: 'bookings' | 'jobPool'; id: string; title: string; start: string; end: string; client: { name: string; phone?: string; email?: string }; driverId?: number | null; vehicleId?: number | null; amount?: number };
+export type DocumentJob = { collection: 'bookings' | 'jobPool'; id: string; title: string; start: string; end: string; client: { name: string; type?: string; contactName?: string; phone?: string; email?: string }; transportDetails?: JobTransportDetails; note?: string; driverId?: number | null; vehicleId?: number | null; amount?: number };
 export type TransportDocument = {
   id: string; documentId: string; number: string; supersedes?: string; reason: string; voided: boolean;
   kind: DocumentKind; createdAt: string; source: Pick<DocumentJob, 'collection' | 'id' | 'title' | 'start' | 'end'>;
@@ -49,7 +51,8 @@ export function instructionValues(job: DocumentJob, profile: DocumentProfile, re
   values.operationStartPlace = profile.depotPlace ?? '';
   values.operationEndPlace = profile.depotPlace ?? '';
   if (related && related.kind === 'acceptance' && !related.voided && related.source.collection === job.collection && related.source.id === job.id && related.source.start === job.start && related.source.end === job.end && related.source.title === job.title && related.values.applicantName === job.client.name) {
-    for (const key of ['operationStartPlace', 'operationStartAt', 'operationEndPlace', 'operationEndAt', 'boardingPlace', 'boardingAt', 'alightingPlace', 'alightingAt'] as const) values[key] = key.endsWith('At') ? localTime(related.values[key]) : related.values[key];
+    for (const key of ['operationStartPlace', 'operationStartAt', 'operationEndPlace', 'operationEndAt'] as const) values[key] = key.endsWith('At') ? localTime(related.values[key]) : related.values[key];
+    for (const key of ['boardingPlace', 'alightingPlace'] as const) if (!values[key]) values[key] = related.values[key];
     if (!values.applicantContact) values.applicantContact = related.values.applicantContact;
     values.timeStatus = related.values.timeStatus;
   }
@@ -58,7 +61,7 @@ export function instructionValues(job: DocumentJob, profile: DocumentProfile, re
 export function newDocumentValues(job: DocumentJob, previous?: TransportDocument): DocumentValues {
   const values = Object.fromEntries(documentFields.map(([key]) => [key, ''])) as Record<DocumentField, string>;
   if (previous) for (const key of ['issuerName', 'officeName', 'issuerAddress', 'issuerPhone', 'emergencyContact', 'serviceArea'] as const) values[key] = previous.values[key];
-  return { ...values, applicantName: job.client.name, applicantContact: [job.client.phone, job.client.email].filter(Boolean).join(' ／ '), boardingAt: localTime(job.start), alightingAt: localTime(job.end), applicationMethod: '', priceStatus: 'fixed', timeStatus: 'planned' };
+  return { ...values, ...job.transportDetails, applicantType: customerTypes.find(type => type === job.client.type) ?? '', applicantName: job.client.name, applicantContact: [job.client.contactName, job.client.phone, job.client.email].filter(Boolean).join(' ／ '), notes: job.note ?? '', boardingAt: localTime(job.start), alightingAt: localTime(job.end), applicationMethod: job.transportDetails?.applicationMethod ?? '', priceStatus: 'fixed', timeStatus: 'planned' };
 }
 export function savedValues(values: DocumentValues): DocumentValues {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, key.endsWith('At') ? isoTime(value) : value.trim()])) as DocumentValues;
@@ -68,10 +71,11 @@ export function editableValues(values: DocumentValues): DocumentValues {
 }
 export function documentError(kind: DocumentKind, values: DocumentValues) {
   for (const [key, label, type, , required] of relevantFields(kind)) {
-    const value = values[key];
+    const value = values[key] ?? '';
     if (required && !value.trim()) return `${label}を入力してください。`;
     if (value.length > (type === 'textarea' ? 2000 : key === 'applicantContact' ? 512 : 200)) return `${label}が長すぎます。`;
   }
+  if (values.applicantType && !customerTypes.some(type => type === values.applicantType)) return '顧客区分は法人または個人を選んでください。';
   if (kind === 'acceptance' && (!Object.prototype.hasOwnProperty.call(applicationMethods, values.applicationMethod) || (['app', 'web', 'sns', 'other'].includes(values.applicationMethod) && !values.methodDetail.trim()))) return '申込方法と、その名称・具体的方法を入力してください。';
   if (kind === 'acceptance' && (['fare', 'charge'] as const).some(key => !/^\d{1,10}$/.test(values[key]) || Number(values[key]) > 9999999999)) return '運賃・料金は税込の円単位で入力してください。';
   if (kind === 'acceptance' && values.priceStatus === 'estimate' && !values.priceBasis.trim()) return '概算額の算出根拠を入力してください。';

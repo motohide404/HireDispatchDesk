@@ -41,6 +41,15 @@ class TransportDocumentTests(unittest.TestCase):
         for kind in ('acceptance', 'instruction'):
             app.validate_transport_document(document(kind), workspace())
 
+    def test_customer_type_is_optional_for_old_receipts_and_limited_for_new_ones(self):
+        row = document()
+        app.validate_transport_document(row, workspace())
+        for kind in ('法人', '個人', ''):
+            row['values']['applicantType'] = kind
+            app.validate_transport_document(row, workspace())
+        row['values']['applicantType'] = '旅行会社'
+        with self.assertRaises(ValueError): app.validate_transport_document(row, workspace())
+
     def test_statutory_fields_and_split_deadhead_passenger_times_are_required(self):
         for field in ('issuerName', 'issuerAddress', 'emergencyContact', 'serviceArea', 'applicantContact', 'operationStartPlace', 'operationEndAt', 'boardingPlace', 'alightingAt', 'fare', 'charge'):
             row = document(); row['values'][field] = ''

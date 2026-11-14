@@ -1,4 +1,5 @@
 import type { PartnerContact, PartnerLedgerData, PartnerOffice, PartnerRecord } from '../data/partners';
+import { customerTypes } from './jobDocumentFields';
 
 export type JobCustomerLink = { partnerId: string; officeId?: string; contactId?: string };
 export type JobClient = {
@@ -34,7 +35,7 @@ function defaults(link: JobCustomerLink, ledger: PartnerLedgerData) {
   const records = customerRecords(link, ledger);
   if (!records) return;
   const { partner, office, contact } = records;
-  return { clientName: partner.displayName, clientType: partner.category, contactName: contact?.name ?? '',
+  return { clientName: partner.officialName || partner.displayName, clientType: '法人', contactName: contact?.name ?? '',
     phone: contact?.phone || office?.phone || partner.phone || '', email: contact?.email || office?.email || partner.email || '' };
 }
 
@@ -46,7 +47,7 @@ export function selectJobCustomer(row: CustomerRow, link: JobCustomerLink, ledge
 
 export function unlinkJobCustomer(row: CustomerRow): CustomerRow {
   const { customer: _customer, customerSnapshot: _snapshot, ...remaining } = row;
-  return { ...remaining, values: { ...row.values, clientName: '', clientType: '個人', contactName: '', phone: '', email: '' } };
+  return { ...remaining, values: { ...row.values, clientName: '', clientType: customerTypes[0], contactName: '', phone: '', email: '' } };
 }
 
 // Drafts follow the ledger while keeping deliberate changes to this job's
@@ -75,7 +76,7 @@ export function resolveJobCustomer(row: CustomerRow, ledger: PartnerLedgerData):
 export function jobClient(row: CustomerRow, ledger: PartnerLedgerData): JobClient {
   const values = row.values;
   const records = row.customer ? customerRecords(row.customer, ledger) : undefined;
-  return { type: values.clientType?.trim() || 'その他', name: values.clientName.trim(), source: row.customer ? 'ledger' : 'manual',
+  return { type: customerTypes.find(type => type === values.clientType?.trim()) ?? '個人', name: values.clientName.trim(), source: row.customer ? 'ledger' : 'manual',
     ...(row.customer ?? {}), ...(records?.office ? { officeName: records.office.displayName } : {}),
     ...Object.fromEntries(['contactName', 'phone', 'email'].filter(key => values[key]?.trim()).map(key => [key, values[key].normalize('NFKC').trim()])) };
 }

@@ -1,3 +1,4 @@
+import { applicationMethods, customerTypes } from '../lib/jobDocumentFields';
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import type { DriverLedgerEntry } from '../data/drivers';
 import type { PartnerLedgerData } from '../data/partners';
@@ -52,12 +53,12 @@ export default function JobEntryPage({ rows: draftRows, onRowsChange, date, onDa
   }
   function focusCell(row: number, column: number) {
     requestAnimationFrame(() => {
-      const control = table.current?.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-row="${row}"][data-column="${column}"]`);
+      const control = table.current?.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(`[data-row="${row}"][data-column="${column}"]`);
       control?.focus();
       control?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     });
   }
-  function paste(event: ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>, row: number, column: number) {
+  function paste(event: ClipboardEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>, row: number, column: number) {
     const text = event.clipboardData.getData('text/plain');
     if (!/[\t\r\n]/.test(text)) return;
     event.preventDefault();
@@ -67,7 +68,7 @@ export default function JobEntryPage({ rows: draftRows, onRowsChange, date, onDa
       onRowsChange(next.map(item => resolveJobCustomer(item, customers).row));
     } catch (cause) { setError(cause instanceof Error ? cause.message : '貼り付けできませんでした。'); }
   }
-  function move(event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>, row: number, column: number) {
+  function move(event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>, row: number, column: number) {
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (event.key === 'Enter' && !(event.currentTarget.tagName === 'TEXTAREA' && (event.altKey || event.ctrlKey || event.metaKey))) {
       event.preventDefault();
@@ -123,14 +124,14 @@ export default function JobEntryPage({ rows: draftRows, onRowsChange, date, onDa
       value: row.values[column.key] ?? '', disabled: locked,
       maxLength: column.maxLength,
       placeholder: placeholders[column.key],
-      onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => updateCell(row.id, column.key, event.target.value),
-      onPaste: (event: ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>) => paste(event, rowIndex, columnIndex),
-      onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => move(event, rowIndex, columnIndex),
+      onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => updateCell(row.id, column.key, event.target.value),
+      onPaste: (event: ClipboardEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => paste(event, rowIndex, columnIndex),
+      onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => move(event, rowIndex, columnIndex),
       className: `block min-h-11 w-full rounded-none border-0 px-3 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:bg-emerald-50 focus:ring-2 focus:ring-inset focus:ring-emerald-600 disabled:bg-slate-100 ${cellError ? 'bg-rose-50' : 'bg-transparent'}`
     };
     const list = ['driver', 'vehicle', 'class', 'clientType'].includes(column.kind) ? `job-entry-${column.kind}` : undefined;
     return <>
-      {column.kind === 'memo' ? <textarea {...props} rows={1} title="改行はAlt＋Enter、次の行へはEnter" />
+      {column.kind === 'clientType' || column.kind === 'applicationMethod' ? <select {...props}><option value="">選択してください</option>{(column.kind === 'clientType' ? customerTypes.map(value => [value, value]) : Object.entries(applicationMethods)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select> : column.kind === 'memo' ? <textarea {...props} rows={1} title="改行はAlt＋Enter、次の行へはEnter" />
         : <input {...props} type="text" autoComplete="off" readOnly={column.key === 'clientName' && Boolean(row.customer)}
           onBlur={column.key === 'clientName' && !row.customer ? () => onRowsChange(rows.map(item => item.id === row.id ? resolveJobCustomer(item, customers).row : item)) : undefined}
           inputMode={column.kind === 'amount' ? 'decimal' : column.key === 'phone' ? 'tel' : column.key === 'email' ? 'email' : undefined} list={list} />}
@@ -138,7 +139,7 @@ export default function JobEntryPage({ rows: draftRows, onRowsChange, date, onDa
         <button type="button" disabled={locked} aria-label={`${rowIndex + 1}行目 台帳から選ぶ`} onClick={() => setPickerRow(row.id)} className="font-semibold text-emerald-800 underline disabled:opacity-40">台帳から選ぶ</button>
         {row.customer ? <>
           <span className="text-emerald-800">台帳連動{customerRecords(row.customer, customers)?.office ? `・${customerRecords(row.customer, customers)!.office!.displayName}` : ''}</span>
-          <button type="button" disabled={locked} aria-label={`${rowIndex + 1}行目 台帳連動を解除`} className="text-slate-500 underline" onClick={() => onRowsChange(rows.map(item => item.id === row.id ? unlinkJobCustomer(item) : item))}>解除</button>
+          <button type="button" disabled={locked} aria-label={`${rowIndex + 1}行目 申込者を変更`} className="text-slate-500 underline" onClick={() => onRowsChange(rows.map(item => item.id === row.id ? unlinkJobCustomer(item) : item))}>変更</button>
         </> : <span className="text-slate-500">新規は直接入力</span>}
       </div>}
       {cellError && <p id={`${row.id}-${column.key}-error`} className="px-3 pb-2 text-xs font-medium text-rose-700">{cellError}</p>}
@@ -151,9 +152,10 @@ export default function JobEntryPage({ rows: draftRows, onRowsChange, date, onDa
         <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Work entry</p>
         <h2 className="mt-1 text-2xl font-bold text-slate-900">仕事登録</h2>
         <p className="mt-2 text-sm text-slate-600">1行に1件ずつ入力します。確認して登録すると、配車ボードの未配車の仕事に追加されます。</p>
-        <p className="mt-1 text-sm text-slate-600">既存のお客様は台帳から選ぶと連絡先が入ります。新規は電話番号かメールアドレスを入力してください。</p>
+        <p className="mt-1 text-sm text-slate-600">顧客区分は法人／個人です。台帳から選ぶと正式名称と連絡先が入ります。新規は電話番号かメールアドレスを入力してください。</p>
       </div>
       <button type="button" disabled={registering} onClick={() => onOpenDispatch()} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">配車ボードへ戻る</button>
+      <p className="w-full text-sm text-slate-600">顧客情報・乗降地点と日時・申込方法・その他の事項は、受書の作成時に引き継ぎます。</p>
     </header>
 
     {success && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-300 bg-emerald-50 px-5 py-4 text-emerald-900">
@@ -222,7 +224,7 @@ export default function JobEntryPage({ rows: draftRows, onRowsChange, date, onDa
         <p className="text-sm font-semibold text-slate-700">見積合計：{totals.entered ? `${totals.sum.toLocaleString('ja-JP')}円（税抜）` : '金額未入力'}{totals.entered < results.length && totals.entered > 0 && ` ／ 未入力${results.length - totals.entered}件`}</p></div>
       <div className="overflow-auto"><table className="min-w-[1400px] w-full border-collapse text-left text-sm" aria-label="仕事の登録内容">
         <thead><tr><th className="border-b p-3">行</th>{JOB_COLUMNS.map(column => <th key={column.key} className="border-b p-3 whitespace-nowrap">{column.label}</th>)}</tr></thead>
-        <tbody>{results.map(result => <tr key={result.row.id}><th scope="row" className="border-b p-3">{result.index + 1}</th>{JOB_COLUMNS.map(column => <td key={column.key} className="border-b p-3 whitespace-pre-wrap break-words">{result.row.values[column.key] || (column.key === 'endDate' ? '利用日と同日' : '—')}{column.key === 'clientName' && <p className="mt-1 text-xs text-slate-500">{result.row.customer ? ['台帳連動', customerRecords(result.row.customer, customers)?.office?.displayName].filter(Boolean).join('・') : '新規・直接入力'}</p>}</td>)}</tr>)}</tbody>
+        <tbody>{results.map(result => <tr key={result.row.id}><th scope="row" className="border-b p-3">{result.index + 1}</th>{JOB_COLUMNS.map(column => <td key={column.key} className="border-b p-3 whitespace-pre-wrap break-words">{(column.key === 'applicationMethod' ? applicationMethods[result.row.values[column.key] as keyof typeof applicationMethods] ?? result.row.values[column.key] : result.row.values[column.key]) || (column.key === 'endDate' ? '利用日と同日' : '—')}{column.key === 'clientName' && <p className="mt-1 text-xs text-slate-500">{result.row.customer ? ['台帳連動', customerRecords(result.row.customer, customers)?.office?.displayName].filter(Boolean).join('・') : '新規・直接入力'}</p>}</td>)}</tr>)}</tbody>
       </table></div>
       {submitted && error && <p className="text-sm text-slate-600">入力内容は保持しています。同じ仕事を重複させずに保存を再試行できます。</p>}
       <div className="flex flex-wrap justify-end gap-3">
@@ -231,7 +233,6 @@ export default function JobEntryPage({ rows: draftRows, onRowsChange, date, onDa
       </div>
     </section>}
 
-    <datalist id="job-entry-clientType">{['個人', '法人', 'ホテル', '旅行代理店', 'ハイヤー会社', 'アプリ', 'その他'].map(value => <option key={value} value={value} />)}</datalist>
     <datalist id="job-entry-class">{classOptions.map(value => <option key={value} value={value} />)}</datalist>
     <datalist id="job-entry-vehicle">{vehicles.map(vehicle => <option key={vehicle.id} value={vehicleChoice(vehicle)}>{vehicle.plateNo}</option>)}</datalist>
     <datalist id="job-entry-driver">{drivers.filter(driver => driver.status === 'active').map(driver => <option key={driver.id} value={driverChoice(driver)} />)}</datalist>

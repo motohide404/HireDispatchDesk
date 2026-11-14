@@ -2,9 +2,10 @@ import type { DriverLedgerEntry } from '../data/drivers';
 import { vehicleClassLabels, type VehicleLedgerVehicle } from '../data/vehicles';
 import type { PartnerLedgerData } from '../data/partners';
 import { EMPTY_CUSTOMERS, jobClient, resolveJobCustomer, unlinkJobCustomer, validContactEmail, validContactPhone, type CustomerRow, type JobClient } from './jobCustomers';
+import { applicationMethodValue, customerTypes, sharedLabels, type JobTransportDetails } from './jobDocumentFields';
 
 export type JobColumn = {
-  key: string; label: string; kind: 'text' | 'date' | 'time' | 'amount' | 'class' | 'driver' | 'vehicle' | 'clientType' | 'memo';
+  key: string; label: string; kind: 'text' | 'date' | 'time' | 'amount' | 'class' | 'driver' | 'vehicle' | 'clientType' | 'applicationMethod' | 'memo';
   width: number; required?: boolean; maxLength?: number; extra?: boolean;
 };
 
@@ -12,20 +13,24 @@ export type JobColumn = {
 // optional columns can use extra:true; their values travel with the job.
 export const JOB_COLUMNS: readonly JobColumn[] = [
   { key: 'title', label: '仕事名', kind: 'text', width: 240, required: true, maxLength: 200 },
-  { key: 'clientName', label: '取引先・お客様名', kind: 'text', width: 280, required: true, maxLength: 200 },
-  { key: 'clientType', label: '顧客区分', kind: 'clientType', width: 125, maxLength: 80 },
+  { key: 'clientName', label: sharedLabels.clientName, kind: 'text', width: 280, required: true, maxLength: 200 },
+  { key: 'clientType', label: sharedLabels.clientType, kind: 'clientType', width: 125, required: true, maxLength: 80 },
   { key: 'startDate', label: '利用日', kind: 'date', width: 145, required: true },
-  { key: 'startTime', label: '開始', kind: 'time', width: 100, required: true },
+  { key: 'startTime', label: '旅客の乗車時刻', kind: 'time', width: 120, required: true },
   { key: 'endDate', label: '終了日', kind: 'date', width: 145 },
-  { key: 'endTime', label: '終了', kind: 'time', width: 100, required: true },
+  { key: 'endTime', label: '旅客の降車時刻', kind: 'time', width: 120, required: true },
   { key: 'preferClass', label: '希望車両区分', kind: 'class', width: 170, maxLength: 120 },
   { key: 'vehicle', label: '指定車両', kind: 'vehicle', width: 200 },
   { key: 'driver', label: '指定乗務員', kind: 'driver', width: 200 },
   { key: 'amount', label: '見積金額（税抜・円）', kind: 'amount', width: 175 },
-  { key: 'note', label: 'メモ', kind: 'memo', width: 280, maxLength: 1000 },
-  { key: 'contactName', label: '連絡担当者', kind: 'text', width: 180, maxLength: 120 },
-  { key: 'phone', label: '電話番号', kind: 'text', width: 180, maxLength: 40 },
-  { key: 'email', label: 'メールアドレス', kind: 'text', width: 260, maxLength: 254 }
+  { key: 'note', label: sharedLabels.note, kind: 'memo', width: 280, maxLength: 1000 },
+  { key: 'contactName', label: sharedLabels.contactName, kind: 'text', width: 180, maxLength: 120 },
+  { key: 'phone', label: sharedLabels.phone, kind: 'text', width: 180, maxLength: 40 },
+  { key: 'email', label: sharedLabels.email, kind: 'text', width: 260, maxLength: 254 },
+  { key: 'boardingPlace', label: sharedLabels.boardingPlace, kind: 'text', width: 240, maxLength: 200 },
+  { key: 'alightingPlace', label: sharedLabels.alightingPlace, kind: 'text', width: 240, maxLength: 200 },
+  { key: 'applicationMethod', label: sharedLabels.applicationMethod, kind: 'applicationMethod', width: 160 },
+  { key: 'methodDetail', label: sharedLabels.methodDetail, kind: 'text', width: 280, maxLength: 200 }
 ];
 export const MAX_JOB_ROWS = 200;
 export type JobEntryRow = CustomerRow;
@@ -33,11 +38,12 @@ export type NewWorkJob = {
   id: string; title: string; client: JobClient; start: string; end: string;
   preferClass: string; vehicleId: number | null; driverId: number | null; amount?: number; note?: string;
   extraFields?: Record<string, string>;
+  transportDetails?: JobTransportDetails;
 };
 export type JobRowResult = { row: JobEntryRow; index: number; errors: Record<string, string>; job?: NewWorkJob };
 
 export function createJobRow(date: string): JobEntryRow {
-  return { id: 'job-' + crypto.randomUUID(), values: { ...Object.fromEntries(JOB_COLUMNS.map(column => [column.key, ''])), startDate: date, clientType: '個人' } };
+  return { id: 'job-' + crypto.randomUUID(), values: { ...Object.fromEntries(JOB_COLUMNS.map(column => [column.key, ''])), startDate: date, clientType: customerTypes[0] } };
 }
 export function hasJobInput(row: JobEntryRow) {
   return Object.entries(row.values).some(([key, value]) => key !== 'startDate' && key !== 'clientType' && value.trim());
@@ -86,6 +92,10 @@ export function validateJobRows(rows: JobEntryRow[], drivers: DriverLedgerEntry[
       else if (raw.trim() && column.kind === 'amount' && amountValue(raw) === undefined) errors[column.key] = '金額は0〜9,999,999,999円の整数で入力してください。';
     }
     if (resolved.error) errors.clientName = resolved.error;
+    if (!customerTypes.some(type => type === values.clientType?.trim())) errors.clientType = '法人または個人を選んでください。';
+    const method = applicationMethodValue(values.applicationMethod ?? '');
+    if (values.applicationMethod?.trim() && !method) errors.applicationMethod = '申込方法を候補から選んでください。';
+    if (method && ['app', 'web', 'sns', 'other'].includes(method) && !values.methodDetail?.trim()) errors.methodDetail = '申込先の名称・具体的方法を入力してください。';
     const phone = (values.phone ?? '').normalize('NFKC').trim();
     const email = (values.email ?? '').normalize('NFKC').trim();
     if (!phone && !email) {
@@ -113,6 +123,7 @@ export function validateJobRows(rows: JobEntryRow[], drivers: DriverLedgerEntry[
       start, end, preferClass: preferClass || '指定なし', vehicleId: vehicle.id, driverId: driver.id,
       ...(values.amount?.trim() ? { amount: amountValue(values.amount) } : {}),
       ...(values.note?.trim() ? { note: values.note.trim() } : {}),
+      transportDetails: Object.fromEntries(['boardingPlace', 'alightingPlace', 'methodDetail'].filter(key => values[key]?.trim()).map(key => [key, values[key].trim()]).concat(method ? [['applicationMethod', method]] : [])),
       ...(Object.keys(extras).length ? { extraFields: extras } : {}) };
     return [{ row, index, errors, job }];
   });
