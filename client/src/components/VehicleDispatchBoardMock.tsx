@@ -1,3 +1,5 @@
+import { usePersistentState } from "../lib/store";
+import { today } from "../data/seed";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, FormEvent, ReactNode } from "react";
 
@@ -6,6 +8,30 @@ import { useFlashOnChange } from "../lib/useFlashOnChange";
 import "./VehicleDispatchBoardMock.css";
 import type { DispatchVehicle } from "../data/vehicles";
 import Calendar from "./Calendar";
+import { partnerLedger, type PartnerRecord, type PartnerOffice, type PartnerContact } from '../data/partners';
+import { customerRecords, type JobClient } from '../lib/jobCustomers';
+
+function JobContactDetails({ client }: { client: JobClient }) {
+  const [partners] = usePersistentState<PartnerRecord[]>('partners', partnerLedger.partners);
+  const [offices] = usePersistentState<PartnerOffice[]>('offices', partnerLedger.offices);
+  const [contacts] = usePersistentState<PartnerContact[]>('contacts', partnerLedger.contacts);
+  const current = client?.partnerId ? customerRecords({ partnerId: client.partnerId, officeId: client.officeId, contactId: client.contactId }, { partners, offices, contacts }) : undefined;
+  if (!client || (!client.phone && !client.email && !client.partnerId)) return null;
+  const currentPhone = current?.contact?.phone || current?.office?.phone || current?.partner.phone;
+  const currentEmail = current?.contact?.email || current?.office?.email || current?.partner.email;
+  const changed = current && (currentPhone !== client.phone || currentEmail !== client.email || (current.contact?.name ?? '') !== (client.contactName ?? '') || (current.office?.displayName ?? '') !== (client.officeName ?? '') || current.partner.displayName !== client.name);
+  const channels = (phone?: string, email?: string) => <>
+    {phone && <div>電話：<a href={`tel:${phone.replace(/[^\d+]/g, '')}`} className="text-emerald-800 underline">{phone}</a></div>}
+    {email && <div className="break-all">メール：<a href={`mailto:${encodeURIComponent(email)}`} className="text-emerald-800 underline">{email}</a></div>}
+  </>;
+  return <section aria-label="お客様の連絡先" className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+    <h4 className="mb-2 text-xs font-semibold text-slate-600">お客様の連絡先{client.partnerId ? '（受付時）' : ''}</h4>
+    {client.officeName && <div>拠点：{client.officeName}</div>}{client.contactName && <div>担当者：{client.contactName}</div>}
+    {channels(client.phone, client.email)}
+    {client.partnerId && <p className="mt-2 text-xs text-slate-500">{current ? '取引先台帳と連動' : '台帳の参照先を確認してください。受付時の連絡先を表示しています。'}</p>}
+    {changed && <div className="mt-3 border-t border-slate-200 pt-2" aria-label="台帳の現在の連絡先"><p className="mb-1 text-xs font-semibold text-slate-600">台帳の現在の連絡先</p><div>{[current.partner.displayName, current.office?.displayName, current.contact?.name].filter(Boolean).join(' ／ ')}</div>{channels(currentPhone, currentEmail)}</div>}
+  </section>;
+}
 
 const hours = Array.from({ length: 25 }, (_, i) => i);
 const DRIVER_POOL_WIDTH_INIT = 240;
@@ -161,13 +187,14 @@ type BoardBooking = {
   id: number;
   vehicleId: number;
   driverId: number | null;
-  client: { type: string; name: string };
+  client: JobClient;
   title: string;
   start: string;
   end: string;
   status: string;
   note?: string;
   attachments?: BookingAttachment[];
+  extraFields?: Record<string, string>;
   is_overnight: boolean;
   overnight_from_previous_day?: boolean;
   overnight_to_next_day?: boolean;
@@ -275,7 +302,7 @@ const BOOKINGS: BoardBooking[] = [
 type UnassignedJob = {
   id: string;
   title: string;
-  client: { type: string; name: string };
+  client: JobClient;
   start: string;
   end: string;
   preferClass: string;
@@ -283,6 +310,8 @@ type UnassignedJob = {
   driverId: number | null;
   amount?: number;
   note?: string;
+  attachments?: BookingAttachment[];
+  extraFields?: Record<string, string>;
 };
 
 const UNASSIGNED_JOBS: UnassignedJob[] = [
@@ -435,7 +464,9 @@ function bookingToJob(b: BoardBooking, vehicleLookup: Map<number, VehicleInfo>):
     vehicleId: null,
     driverId: null,
     amount: b.amount,
-    note: b.note
+    note: b.note,
+    attachments: b.attachments,
+    extraFields: b.extraFields
   };
 }
 
@@ -516,12 +547,18 @@ type VehicleDispatchBoardMockProps = {
   drivers: DriverInfo[];
   vehicles: DispatchVehicle[];
   onOpenDriverLedger?: () => void;
+  onOpenJobEntry?: () => void;
+  initialDate?: string;
+  onDateChange?: (date: string) => void;
 };
 
 export default function VehicleDispatchBoardMock({
   drivers,
   vehicles,
-  onOpenDriverLedger
+  onOpenDriverLedger,
+  onOpenJobEntry,
+  initialDate,
+  onDateChange
 }: VehicleDispatchBoardMockProps) {
   const [fullView, setFullView] = useState(false);
   const [pxPerMin, setPxPerMin] = useState(DEFAULT_PX_PER_MIN);
@@ -535,9 +572,9 @@ export default function VehicleDispatchBoardMock({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerItem, setDrawerItem] = useState<DrawerItem | null>(null);
   const [selected, setSelected] = useState<{ type: DrawerItem["type"]; id: number | string } | null>(null);
-  const [bookings, setBookings] = useState<BoardBooking[]>(BOOKINGS);
-  const [appDuties, setAppDuties] = useState<AppDuty[]>(APP_DUTIES_INIT);
-  const [jobPool, setJobPool] = useState<UnassignedJob[]>(UNASSIGNED_JOBS);
+  const [bookings, setBookings] = usePersistentState<BoardBooking[]>("bookings", BOOKINGS);
+  const [appDuties, setAppDuties] = usePersistentState<AppDuty[]>("appDuties", APP_DUTIES_INIT);
+  const [jobPool, setJobPool] = usePersistentState<UnassignedJob[]>("jobPool", UNASSIGNED_JOBS);
   const [jobFormOpen, setJobFormOpen] = useState(false);
   const [jobDraft, setJobDraft] = useState<JobDraft>({
     title: "",
@@ -555,10 +592,11 @@ export default function VehicleDispatchBoardMock({
   const driverMap = useMemo(() => new Map(drivers.map((driver) => [driver.id, driver])), [drivers]);
   const [flashUnassignId, setFlashUnassignId] = useState<number | null>(null);
   const [showJobAmounts, setShowJobAmounts] = useState(true);
-  const bookingIdRef = useRef(500);
+  const bookingIdRef = useRef(Date.now());
   const attachmentUrlsRef = useRef<Map<string, string>>(new Map());
   const centerRef = useRef<HTMLDivElement | null>(null);
-  const [viewDate, setViewDate] = useState("2025-10-03");
+  const [viewDate, setViewDate] = useState(() => initialDate ?? today());
+  useEffect(() => { onDateChange?.(viewDate); }, [viewDate, onDateChange]);
   const dateInputRef = useRef<HTMLInputElement | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -664,7 +702,7 @@ export default function VehicleDispatchBoardMock({
     });
 
     return rows.sort((a, b) => a.sortKey - b.sortKey);
-  }, [appDuties, bookings, jobPool, vehicleMap, viewDateObj]);
+  }, [appDuties, bookings, jobPool, vehicleMap, driverMap, viewDateObj]);
   const jobAmountSummary = useMemo(() => {
     return dailyJobRows.reduce<{ total: number; hasAmount: boolean }>(
       (acc, row) => {
@@ -727,7 +765,7 @@ export default function VehicleDispatchBoardMock({
       return;
     }
     if (endDate <= startDate) {
-      endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+      endDate = new Date(endDate.getTime() + DAY_MS);
     }
     const driverId = jobDraft.driverId ? Number(jobDraft.driverId) : null;
     if (jobDraft.driverId && Number.isNaN(driverId)) {
@@ -968,10 +1006,12 @@ export default function VehicleDispatchBoardMock({
     });
   };
 
-  const handleAddBookingAttachments = (id: number, files: FileList) => {
+  const handleAddBookingAttachments = async (id: number, files: FileList) => {
     const fileArray = Array.from(files);
     if (fileArray.length === 0) return;
-    const newAttachments = fileArray.map((file) => makeAttachmentFromFile(file));
+    let newAttachments: BookingAttachment[];
+    try { newAttachments = await Promise.all(fileArray.map(makeAttachmentFromFile)); }
+    catch (error) { alert(error instanceof Error ? error.message : "資料を保存できませんでした。"); return; }
     registerAttachmentUrls(newAttachments);
     setBookings((prev) =>
       prev.map((booking) =>
@@ -1053,7 +1093,7 @@ export default function VehicleDispatchBoardMock({
         alert("アプリ稼働と重複するため時間調整できません");
         return prev;
       }
-      if (hasDriverTimeConflict(prev, cand)) {
+      if (hasDriverTimeConflict(prev, cand) || appDuties.some(duty => duty.driverId != null && duty.driverId === cand.driverId && overlap(duty.start, duty.end, cand.start, cand.end))) {
         alert("割り当てドライバーの他予約と重複しています");
         return prev;
       }
@@ -1089,6 +1129,9 @@ export default function VehicleDispatchBoardMock({
     if (!duty) return false;
     if (duty.driverId === driverId) return false;
 
+    if ([...bookings, ...appDuties.filter(other => other.id !== dutyId)].some(other => other.driverId === driverId && overlap(other.start, other.end, duty.start, duty.end))) {
+      alert("同一ドライバーの時間重複のため割当できません"); return false;
+    }
     const incomingDriverName = driverMap.get(driverId)?.name ?? "新ドライバー";
     const currentDriverName =
       duty.driverId != null ? driverMap.get(duty.driverId)?.name ?? "現在のドライバー" : null;
@@ -1179,13 +1222,16 @@ export default function VehicleDispatchBoardMock({
     const baseBooking = {
       id: ++bookingIdRef.current,
       vehicleId,
-      driverId: null,
+      driverId: job.driverId ?? null,
       client: job.client,
       title: job.title,
       start: toJstIso(start),
       end: toJstIso(end),
       status: "warn" as const,
-      note: "ドライバー未割当（ジョブから配置：カード時刻にスナップ）"
+      note: job.note,
+      amount: job.amount,
+      attachments: job.attachments,
+      extraFields: job.extraFields
     };
     const overnightMeta = computeOvernightInfo(baseBooking.start, baseBooking.end, viewDate);
     const newBooking: BoardBooking = { ...baseBooking, ...overnightMeta };
@@ -1197,6 +1243,7 @@ export default function VehicleDispatchBoardMock({
       alert("アプリ稼働と重複のため配置できません");
       return;
     }
+    if (hasDriverTimeConflict(bookings, newBooking) || appDuties.some(duty => duty.driverId != null && duty.driverId === newBooking.driverId && overlap(duty.start, duty.end, newBooking.start, newBooking.end))) { alert("同一ドライバーの時間が重複しています"); return; }
     const warn = bufferWarn(bookings, newBooking);
     const finalized = warn ? { ...newBooking, status: newBooking.status === "hard" ? "hard" : "warn" } : newBooking;
     setBookings((prev) => [...prev, finalized]);
@@ -1536,7 +1583,7 @@ export default function VehicleDispatchBoardMock({
                                 if (!ok) return;
                               }
                               const cand: BoardBooking = { ...cur, driverId };
-                              if (hasDriverTimeConflict(bookings, cand)) {
+                              if (hasDriverTimeConflict(bookings, cand) || appDuties.some(duty => duty.driverId != null && duty.driverId === cand.driverId && overlap(duty.start, duty.end, cand.start, cand.end))) {
                                 alert("同一ドライバーの時間重複のため割当できません");
                                 return;
                               }
@@ -1585,7 +1632,10 @@ export default function VehicleDispatchBoardMock({
               >
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="font-medium">ジョブプール（未割当）</h2>
-                  <span className="text-xs text-slate-500">{jobPool.length} 件</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-500">{jobPool.length} 件</span>
+                    {onOpenJobEntry && <button type="button" onClick={onOpenJobEntry} className="rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-900">表でまとめて登録</button>}
+                  </div>
                 </div>
                 {jobPool.length === 0 ? (
                   <div className="text-slate-500 text-sm">未割当の仕事はありません。Excel風入力画面で登録するとここに表示されます。</div>
@@ -2884,6 +2934,7 @@ function DetailsPane({
   const vehicle = item.vehicle;
   const isBooking = type === "booking";
   const isDuty = type === "duty";
+  const extraFields = isDuty ? undefined : (data as BoardBooking | UnassignedJob).extraFields;
 
   let displayTitle = "";
   let clientType = "";
@@ -2970,6 +3021,8 @@ function DetailsPane({
         )}
       </section>
 
+      {!isDuty && <JobContactDetails client={(data as BoardBooking | UnassignedJob).client} />}
+
       <section>
         <h4 className="text-xs uppercase tracking-wider text-slate-500 mb-1">ドライバー</h4>
         <div>{driverLabel}</div>
@@ -2992,6 +3045,13 @@ function DetailsPane({
           </button>
         </section>
       )}
+
+      {extraFields && Object.keys(extraFields).length > 0 && <section>
+        <h4 className="text-xs uppercase tracking-wider text-slate-500 mb-2">追加項目</h4>
+        <dl className="space-y-2">{Object.entries(extraFields).map(([label, value]) => <div key={label}>
+          <dt className="text-xs text-slate-500">{label}</dt><dd className="whitespace-pre-wrap break-words text-sm text-slate-800">{value}</dd>
+        </div>)}</dl>
+      </section>}
 
       <section>
         <h4 className="text-xs uppercase tracking-wider text-slate-500 mb-1">検証</h4>
@@ -3109,20 +3169,11 @@ function DetailsPane({
   );
 }
 
-function makeAttachmentFromFile(file: File): BookingAttachment {
-  const id =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `att-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const url = URL.createObjectURL(file);
-  return {
-    id,
-    name: file.name,
-    type: file.type || "application/octet-stream",
-    url,
-    size: file.size,
-    addedAt: new Date().toISOString()
-  };
+async function makeAttachmentFromFile(file: File): Promise<BookingAttachment> {
+  if (file.size > 5 * 1024 * 1024) throw new Error("資料は1ファイル5MB以内にしてください。");
+  const response = await fetch("/api/files", { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream", "X-Filename": encodeURIComponent(file.name) }, body: file });
+  if (!response.ok) throw new Error("資料を保存できませんでした。接続とログイン状態を確認してください。");
+  return response.json();
 }
 
 function formatFileSize(bytes: number): string {

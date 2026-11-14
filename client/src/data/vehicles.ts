@@ -1,4 +1,13 @@
-export type VehicleClass = "sedan" | "van" | "luxury" | "suv" | "minibus";
+export type VehicleClass = string;
+
+// Preserve legacy codes while allowing user-defined class names.
+export const vehicleClassLabels: Record<string, string> = {
+  sedan: "セダン", van: "ワゴン", luxury: "ハイグレード", suv: "SUV", minibus: "マイクロバス"
+};
+
+export function formatVehicleClass(value: string) {
+  return vehicleClassLabels[value] ?? value;
+}
 export type OwnerType = "自社" | "協力" | "レンタル";
 
 export type VehicleLedgerVehicle = {

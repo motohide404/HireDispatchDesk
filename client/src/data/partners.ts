@@ -1,5 +1,21 @@
 export type PartnerCategory = "旅行会社" | "代理店" | "法人" | "その他";
 
+export type TariffAdjustment = { kind: "none" | "percent" | "yen"; value: number };
+
+export type PartnerTariff = {
+  id: string;
+  name: string;
+  vehicleClass?: string;
+  route?: string;
+  baseFare?: number;
+  taxTreatment: "included" | "excluded" | "unspecified";
+  discount: TariffAdjustment;
+  kickback: TariffAdjustment;
+  validFrom?: string;
+  validUntil?: string;
+  conditions?: string;
+};
+
 export interface PartnerRecord {
   id: string;
   internalId: string;
@@ -18,6 +34,7 @@ export interface PartnerRecord {
   email: string;
   emergencyContact?: string;
   notes?: string;
+  tariffs?: PartnerTariff[];
 }
 
 export interface PartnerOffice {

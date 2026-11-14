@@ -11,6 +11,17 @@ export type DriverDocument = {
 
 export type DriverLedgerEntryStatus = "active" | "archived";
 
+export type DriverAptitudeRecord = {
+  id: string;
+  assessedAt: string;
+  type: string;
+  institution?: string;
+  notes?: string;
+  nextDueAt?: string;
+};
+
+export type DriverCompliancePatch = Pick<DriverLedgerEntry, "facePhoto" | "aptitudeRecords">;
+
 export type DriverLedgerEntry = {
   id: number;
   tenantId: string;
@@ -35,6 +46,8 @@ export type DriverLedgerEntry = {
   currentDispatchNumber: number;
   status: DriverLedgerEntryStatus;
   documents: DriverDocument[];
+  facePhoto?: DriverDocument;
+  aptitudeRecords?: DriverAptitudeRecord[];
   notes?: string;
 };
 

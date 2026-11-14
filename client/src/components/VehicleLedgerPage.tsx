@@ -1,4 +1,5 @@
-import { useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { formatVehicleClass, vehicleClassLabels } from "../data/vehicles";
 import type {
   VehicleClass,
   VehicleLedgerVehicle,
@@ -28,7 +29,7 @@ function Modal({ title, description, onClose, children }: ModalProps) {
       onMouseDown={onClose}
     >
       <div
-        className="relative w-full max-w-5xl rounded-3xl bg-white p-6 shadow-2xl"
+        className="relative max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
@@ -52,17 +53,11 @@ function Modal({ title, description, onClose, children }: ModalProps) {
   );
 }
 
-const vehicleClassLabels: Record<VehicleClass, string> = {
-  sedan: "セダン",
-  van: "ワゴン",
-  luxury: "ハイグレード",
-  suv: "SUV",
-  minibus: "マイクロバス"
-};
-
 type VehicleLedgerPageProps = {
   vehicles: VehicleLedgerVehicle[];
   maintenanceRecords: VehicleMaintenanceRecord[];
+  onAddVehicle: (vehicle: Omit<VehicleLedgerVehicle, "id">) => void;
+  onUpdateVehicleClass: (id: number, value: string) => void;
 };
 
 type NewVehicleFormState = {
@@ -81,7 +76,7 @@ const createEmptyVehicleForm = (): NewVehicleFormState => ({
   name: "",
   vehiclesId: "",
   officeId: "",
-  class: "sedan",
+  class: "",
   seats: "",
   vin: "",
   plateNo: "",
@@ -143,7 +138,9 @@ function formatOdometer(value: number | undefined) {
 
 export default function VehicleLedgerPage({
   vehicles,
-  maintenanceRecords
+  maintenanceRecords,
+  onAddVehicle,
+  onUpdateVehicleClass
 }: VehicleLedgerPageProps) {
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -170,7 +167,13 @@ export default function VehicleLedgerPage({
 
   const handleCreateVehicleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    console.log("New vehicle", newVehicleForm);
+    if (!newVehicleForm.name.trim() || !newVehicleForm.vehiclesId.trim() || !newVehicleForm.class.trim()) return;
+    if (vehicles.some(vehicle => vehicle.vehiclesId === newVehicleForm.vehiclesId.trim())) {
+      alert("同じ車両IDが登録されています。"); return;
+    }
+    const seats = Number(newVehicleForm.seats);
+    if (!Number.isInteger(seats) || seats < 1) { alert("定員を確認してください。"); return; }
+    onAddVehicle({ ...newVehicleForm, class: newVehicleForm.class.trim(), name: newVehicleForm.name.trim(), vehiclesId: newVehicleForm.vehiclesId.trim(), seats, ownerType: "自社", appsSupported: { uber: false, go: false, diDi: false, nearMe: false } });
     handleCloseCreateModal();
   };
 
@@ -353,10 +356,7 @@ export default function VehicleLedgerPage({
                 <p className="mt-1 text-base font-medium text-slate-800">{selectedVehicle.officeId}</p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">車両区分</p>
-                <p className="mt-1 text-base font-medium text-slate-800">
-                  {vehicleClassLabels[selectedVehicle.class] ?? selectedVehicle.class}
-                </p>
+                <VehicleClassEditor key={selectedVehicle.id} vehicle={selectedVehicle} onSave={onUpdateVehicleClass} />
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">乗車定員</p>
@@ -511,18 +511,17 @@ export default function VehicleLedgerPage({
               </label>
               <label className="flex flex-col gap-2 text-sm text-slate-700">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">車両区分</span>
-                <select
+                <input
                   name="class"
+                  list="vehicle-class-suggestions"
                   value={newVehicleForm.class}
                   onChange={handleNewVehicleChange}
+                  required
+                  maxLength={80}
+                  placeholder="例：アルファード・ジャンボハイヤー"
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                >
-                  {Object.entries(vehicleClassLabels).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+                />
+                <datalist id="vehicle-class-suggestions">{Object.values(vehicleClassLabels).map(label => <option key={label} value={label} />)}</datalist>
               </label>
               <label className="flex flex-col gap-2 text-sm text-slate-700">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">乗車定員</span>
@@ -597,5 +596,16 @@ export default function VehicleLedgerPage({
       ) : null}
     </div>
   );
+}
+
+function VehicleClassEditor({ vehicle, onSave }: { vehicle: VehicleLedgerVehicle; onSave: (id: number, value: string) => void }) {
+  const [value, setValue] = useState(() => formatVehicleClass(vehicle.class));
+  useEffect(() => setValue(formatVehicleClass(vehicle.class)), [vehicle.class]);
+  return <form onSubmit={event => { event.preventDefault(); if (value.trim()) onSave(vehicle.id, value.trim()); }}>
+    <label className="block text-xs font-medium text-slate-500">車両区分
+      <input className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-800" required maxLength={80} value={value} onChange={event => setValue(event.target.value)} placeholder="車両区分を手入力" />
+    </label>
+    <button type="submit" disabled={!value.trim() || value.trim() === formatVehicleClass(vehicle.class)} className="mt-2 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">車両区分を保存</button>
+  </form>;
 }
 

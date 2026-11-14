@@ -1,1 +1,12 @@
 .DS_Store
+
+.private/
+__pycache__/
+*.pyc
+*.env
+.env
+client/test-results/
+client/playwright-report/
+outputs/
+.deployment-build/
+deploy/releases/**/deployment-result.json

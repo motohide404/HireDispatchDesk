@@ -1,5 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import DriverCompliancePanel, { AptitudeDue } from "./DriverCompliancePanel";
+import { licenseExpiryStatus, todayInJapan } from "../lib/ledger";
 import type {
+  DriverCompliancePatch,
   DriverDocumentInput,
   DriverDocumentType,
   DriverLedgerEntry,
@@ -34,12 +37,23 @@ function toOptional(value: string) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function LicenseExpiry({ date, today }: { date?: string; today: string }) {
+  const status = licenseExpiryStatus(date, today);
+  const tone = status.tone === "overdue" || status.tone === "urgent"
+    ? "bg-rose-100 text-rose-800" : status.tone === "soon"
+      ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-700";
+  return <span className={`inline-flex rounded-lg px-2 py-1 text-xs font-medium ${tone}`}>
+    {status.date ? `免許期限：${status.date}（${status.label}）` : status.label}
+  </span>;
+}
+
 type DriverLedgerPageProps = {
   drivers: DriverLedgerEntry[];
   onAddDriver: (input: DriverLedgerInput) => void;
   onArchiveDriver: (id: number) => void;
   onRestoreDriver: (id: number) => void;
   onAddDocument: (driverId: number, document: DriverDocumentInput) => void;
+  onUpdateCompliance: (driverId: number, patch: DriverCompliancePatch) => void;
   onBackToDispatch?: () => void;
 };
 
@@ -97,10 +111,13 @@ export default function DriverLedgerPage({
   onArchiveDriver,
   onRestoreDriver,
   onAddDocument,
+  onUpdateCompliance,
   onBackToDispatch
 }: DriverLedgerPageProps) {
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [licenseFilter, setLicenseFilter] = useState<"60days" | "month" | null>(null);
+  const [today, setToday] = useState(todayInJapan);
   const [selectedId, setSelectedId] = useState<number | null>(() => {
     const active = drivers.find((driver) => driver.status === "active");
     return active?.id ?? drivers[0]?.id ?? null;
@@ -116,17 +133,9 @@ export default function DriverLedgerPage({
   const [isNewDriverModalOpen, setIsNewDriverModalOpen] = useState(false);
 
   useEffect(() => {
-    if (!selectedId) {
-      const first = drivers.find((driver) => driver.status === "active") ?? drivers[0];
-      setSelectedId(first?.id ?? null);
-      return;
-    }
-    const exists = drivers.some((driver) => driver.id === selectedId);
-    if (!exists) {
-      const first = drivers.find((driver) => driver.status === "active") ?? drivers[0];
-      setSelectedId(first?.id ?? null);
-    }
-  }, [drivers, selectedId]);
+    const timer = setInterval(() => setToday(todayInJapan()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     setDocumentForm({ name: "", type: "resume", uri: "", uploadedAt: "" });
@@ -147,6 +156,9 @@ export default function DriverLedgerPage({
       if (!showArchived && driver.status === "archived") {
         return false;
       }
+      const license = licenseExpiryStatus(driver.licenseExpiry, today);
+      if (licenseFilter === "60days" && !license.within60Days) return false;
+      if (licenseFilter === "month" && !license.withinMonth) return false;
       if (!normalized) {
         return true;
       }
@@ -157,16 +169,12 @@ export default function DriverLedgerPage({
         driver.officeId.toLowerCase().includes(normalized)
       );
     });
-  }, [drivers, search, showArchived]);
+  }, [drivers, search, showArchived, licenseFilter, today]);
 
   useEffect(() => {
-    if (!selectedId && filteredDrivers.length > 0) {
-      setSelectedId(filteredDrivers[0].id);
-      return;
-    }
-    if (selectedId && !filteredDrivers.some((driver) => driver.id === selectedId)) {
-      setSelectedId(filteredDrivers[0]?.id ?? null);
-    }
+    if (selectedId !== null && filteredDrivers.some(driver => driver.id === selectedId)) return;
+    const nextId = filteredDrivers[0]?.id ?? null;
+    if (selectedId !== nextId) setSelectedId(nextId);
   }, [filteredDrivers, selectedId]);
 
   const activeDriverCount = useMemo(
@@ -177,16 +185,23 @@ export default function DriverLedgerPage({
     () => drivers.filter((driver) => driver.status === "archived").length,
     [drivers]
   );
-  const expiringLicenses = useMemo(() => {
-    const today = new Date();
-    return drivers.filter((driver) => {
-      if (!driver.licenseExpiry) return false;
-      const expiry = new Date(driver.licenseExpiry);
-      if (Number.isNaN(expiry.getTime())) return false;
-      const diff = (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
-      return diff >= 0 && diff <= 60;
-    }).length;
-  }, [drivers]);
+  const licenseCounts = useMemo(() => drivers.reduce((counts, driver) => {
+    if (!showArchived && driver.status === "archived") return counts;
+    const license = licenseExpiryStatus(driver.licenseExpiry, today);
+    if (license.within60Days) counts.soon++;
+    if (license.withinMonth) counts.month++;
+    return counts;
+  }, { soon: 0, month: 0 }), [drivers, showArchived, today]);
+
+  function filterByLicense(filter: "60days" | "month") {
+    setLicenseFilter(current => current === filter ? null : filter);
+    setSearch("");
+  }
+
+  function clearFilters() {
+    setLicenseFilter(null);
+    setSearch("");
+  }
 
   const selectedDriver = selectedId != null ? drivers.find((driver) => driver.id === selectedId) ?? null : null;
 
@@ -284,7 +299,7 @@ export default function DriverLedgerPage({
               )}
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
               <p className="text-xs uppercase text-slate-500">在籍ドライバー</p>
               <p className="mt-1 text-2xl font-semibold text-slate-900">{activeDriverCount} 名</p>
@@ -293,10 +308,21 @@ export default function DriverLedgerPage({
               <p className="text-xs uppercase text-slate-500">アーカイブ済</p>
               <p className="mt-1 text-2xl font-semibold text-slate-900">{archivedDriverCount} 名</p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <button type="button" aria-label="免許期限60日以内のドライバーを表示" aria-pressed={licenseFilter === "60days"}
+              onClick={() => filterByLicense("60days")}
+              className={`rounded-2xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${licenseFilter === "60days" ? "border-amber-500 bg-amber-50 ring-2 ring-amber-200" : "border-slate-200 bg-white hover:border-amber-400 hover:bg-amber-50"}`}>
               <p className="text-xs uppercase text-slate-500">免許期限 60日以内</p>
-              <p className="mt-1 text-2xl font-semibold text-amber-600">{expiringLicenses} 名</p>
-            </div>
+              <p className="mt-1 text-2xl font-semibold text-amber-700">{licenseCounts.soon} 名</p>
+              <p className="mt-1 text-xs text-amber-800">{licenseFilter === "60days" ? "絞り込み中" : "クリックして表示"}</p>
+            </button>
+            <button type="button" aria-label="免許期限1か月以内のドライバーを表示" aria-pressed={licenseFilter === "month"}
+              title="今日から翌月の同日まで。翌月に同じ日がない場合は月末まで。"
+              onClick={() => filterByLicense("month")}
+              className={`rounded-2xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 ${licenseFilter === "month" ? "border-rose-500 bg-rose-50 ring-2 ring-rose-200" : "border-slate-200 bg-white hover:border-rose-400 hover:bg-rose-50"}`}>
+              <p className="text-xs uppercase text-rose-800">免許期限 1か月以内</p>
+              <p className="mt-1 text-2xl font-semibold text-rose-700">{licenseCounts.month} 名</p>
+              <p className="mt-1 text-xs text-rose-800">{licenseFilter === "month" ? "絞り込み中" : "クリックして表示"}</p>
+            </button>
           </div>
         </div>
 
@@ -316,8 +342,16 @@ export default function DriverLedgerPage({
                     アーカイブも表示
                   </label>
                 </div>
+                {(licenseFilter || search.trim()) && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-100 px-3 py-2">
+                  <p className="text-sm font-medium text-slate-700" role="status">
+                    {licenseFilter === "month" ? "免許期限 1か月以内" : licenseFilter === "60days" ? "免許期限 60日以内" : "検索中"}
+                    {licenseFilter && search.trim() && "・検索中"}：{filteredDrivers.length}名を表示
+                  </p>
+                  <button type="button" className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={clearFilters}>絞り込みを解除</button>
+                </div>}
                 <input
                   type="search"
+                  aria-label="ドライバーを検索"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="氏名・カナ・コード・所属で検索"
@@ -325,7 +359,7 @@ export default function DriverLedgerPage({
                 />
               </div>
             </div>
-            <ul className="max-h-[560px] space-y-1 overflow-auto px-2 py-3">
+            <ul aria-label="運転者リスト" className="max-h-[560px] space-y-1 overflow-auto px-2 py-3">
               {filteredDrivers.length === 0 && (
                 <li className="px-3 py-12 text-center text-sm text-slate-500">該当するドライバーが見つかりません。</li>
               )}
@@ -346,15 +380,29 @@ export default function DriverLedgerPage({
                           : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div>
+                      <div className="flex items-center gap-3 sm:gap-4">
+                        <div className="min-w-0 flex-1 sm:flex-none sm:basis-64">
                           <p className="text-sm font-semibold">{driver.name}</p>
-                          <p className={`text-xs ${isSelected ? "text-slate-200" : "text-slate-500"}`}>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            <AptitudeDue records={driver.aptitudeRecords} />
+                            <LicenseExpiry date={driver.licenseExpiry} today={today} />
+                          </div>
+                          <p className={`break-words text-xs ${isSelected ? "text-slate-200" : "text-slate-500"}`}>
                             {driver.nameKana} ／ {driver.code} ／ {driver.officeId || "所属未設定"}
                           </p>
                         </div>
+                        <div className="flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                          {driver.facePhoto?.uri ? (
+                            <img src={driver.facePhoto.uri} alt={`${driver.name}の顔写真（一覧）`} loading="lazy" className="h-full w-full object-contain" />
+                          ) : (
+                            <svg viewBox="0 0 48 64" className="h-14 w-10 text-slate-400" role="img" aria-label={`${driver.name}の顔写真未登録`}>
+                              <circle cx="24" cy="20" r="10" fill="currentColor" />
+                              <path d="M7 57v-8a17 17 0 0 1 34 0v8Z" fill="currentColor" />
+                            </svg>
+                          )}
+                        </div>
                         <span
-                          className={`text-[11px] font-semibold ${
+                          className={`ml-auto shrink-0 text-[11px] font-semibold ${
                             driver.status === "archived"
                               ? "rounded-full bg-slate-200 px-2 py-0.5 text-slate-600"
                               : "rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700"
@@ -741,6 +789,7 @@ export default function DriverLedgerPage({
             <div className="flex-1 overflow-y-auto px-6 py-6">
               <div className="grid gap-6 xl:grid-cols-2">
                 <div className="space-y-5">
+                  <DriverCompliancePanel key={selectedDriver.id} driver={selectedDriver} onUpdate={onUpdateCompliance} />
                   <div>
                     <h3 className="text-sm font-semibold text-slate-700">基本情報</h3>
                     <dl className="mt-2 grid grid-cols-[auto,1fr] gap-x-3 gap-y-2 text-sm text-slate-700">
@@ -772,7 +821,7 @@ export default function DriverLedgerPage({
                       <dt className="text-slate-500">免許証番号</dt>
                       <dd>{selectedDriver.licenseNumber || "未登録"}</dd>
                       <dt className="text-slate-500">免許有効期限</dt>
-                      <dd>{formatDate(selectedDriver.licenseExpiry)}</dd>
+                      <dd><LicenseExpiry date={selectedDriver.licenseExpiry} today={today} /></dd>
                       <dt className="text-slate-500">最終健診日</dt>
                       <dd>{formatDate(selectedDriver.lastMedicalCheckAt)}</dd>
                       <dt className="text-slate-500">健診メモ</dt>

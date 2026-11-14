@@ -1,3 +1,5 @@
+import { usePersistentState } from "../lib/store";
+import PartnerTariffPanel from "./PartnerTariffPanel";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   partnerLedger,
@@ -28,7 +30,7 @@ function Modal({ title, description, onClose, children }: ModalProps) {
       onMouseDown={onClose}
     >
       <div
-        className="relative w-full max-w-4xl rounded-3xl bg-white p-6 shadow-2xl"
+        className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
@@ -89,22 +91,10 @@ const searchCandidatesFromContact = (contact: PartnerContact) => [
 export default function PartnerLedgerPage() {
   const [searchTerm, setSearchTerm] = useState("");
 
-  const [partners, setPartners] = useState<PartnerRecord[]>(
-    partnerLedger.partners
-  );
-  const [offices, setOffices] = useState<PartnerOffice[]>(
-    partnerLedger.offices
-  );
-  const [contacts] = useState<PartnerContact[]>(partnerLedger.contacts);
-  const [officeOrder, setOfficeOrder] = useState<Record<string, string[]>>(() => {
-    const order: Record<string, string[]> = {};
-    partnerLedger.partners.forEach((partner) => {
-      order[partner.id] = partnerLedger.offices
-        .filter((office) => office.partnerId === partner.id)
-        .map((office) => office.id);
-    });
-    return order;
-  });
+  const [partners, setPartners] = usePersistentState<PartnerRecord[]>("partners", partnerLedger.partners);
+  const [offices, setOffices] = usePersistentState<PartnerOffice[]>("offices", partnerLedger.offices);
+  const [contacts] = usePersistentState<PartnerContact[]>("contacts", partnerLedger.contacts);
+  const [officeOrder, setOfficeOrder] = usePersistentState<Record<string, string[]>>("officeOrder", {});
   const [draggingOfficeId, setDraggingOfficeId] = useState<string | null>(null);
   const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
 
@@ -708,6 +698,7 @@ export default function PartnerLedgerPage() {
             </div>
 
             <div className="flex flex-col gap-8 px-6 py-6">
+              <PartnerTariffPanel key={selectedPartner.id} partner={selectedPartner} onSave={tariffs => setPartners(previous => previous.map(partner => partner.id === selectedPartner.id ? { ...partner, tariffs } : partner))} />
               <div className="flex justify-end">
                 <button
                   type="button"
