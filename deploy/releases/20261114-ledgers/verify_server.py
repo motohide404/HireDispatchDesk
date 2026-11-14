@@ -45,8 +45,20 @@ def main():
             cur.execute('SELECT revision,value FROM workspace WHERE id=1')
             revision, original = cur.fetchone()
             app.validate(original)
+            archive_hash = hashlib.sha256()
+            archive_counts = {}
+            for table in ('transport_documents', 'transport_document_events'):
+                cur.execute('SELECT to_regclass(%s)', (table,))
+                present = cur.fetchone()[0]
+                rows = []
+                if present:
+                    cur.execute('SELECT * FROM ' + table + ' ORDER BY id')
+                    rows = cur.fetchall()
+                archive_counts[table] = len(rows)
+                archive_hash.update(json.dumps(rows, sort_keys=True, ensure_ascii=False, default=str).encode())
     result = {'revision': revision,
-              'workspace_sha256': hashlib.sha256(json.dumps(original, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
+              'workspace_sha256': hashlib.sha256((json.dumps(original, sort_keys=True, ensure_ascii=False) + archive_hash.hexdigest()).encode()).hexdigest(),
+              'transport_archive_sha256': archive_hash.hexdigest(), 'transport_archive_counts': archive_counts,
               'counts': {key: len(original[key]) for key in ('drivers', 'vehicles', 'partners')}}
     if not args.exercise:
         print(json.dumps(result))
@@ -247,6 +259,63 @@ def main():
         raw, _ = call('/api/workspace')
         assert json.loads(raw)['value'] == changed
         checks.append('daily_inspection_and_maintenance_review_persist_and_history_and_unsafe_allow_rejected')
+        # Long-lived documents have separate append-only tables, outside the
+        # shared workspace size limit. All write checks stay in this clone.
+        source_job = next(row for row in changed['jobPool'] if row['id'] == future_job_ids[0])
+        source_job.update(driverId=driver['id'], vehicleId=vehicle['id'])
+        raw, _ = call('/api/workspace', {'revision': final_revision, 'value': changed}, method='PUT')
+        final_revision = json.loads(raw)['revision']
+        values = {key: '' for key in app.TRANSPORT_FIELDS}
+        day = source_job['start'][:10]
+        values.update(issuerName='検証専用事業者', officeName='検証用営業所', issuerAddress='検証用住所',
+                      issuerPhone='検証用連絡先', emergencyContact='検証用緊急連絡先', serviceArea='検証用区域',
+                      applicantName='検証用申込者', applicantContact='test@example.com',
+                      operationStartPlace='車庫', operationStartAt=day + 'T08:00:00+09:00',
+                      boardingPlace='乗車地', boardingAt=day + 'T09:00:00+09:00',
+                      alightingPlace='降車地', alightingAt=day + 'T10:00:00+09:00',
+                      operationEndPlace='車庫', operationEndAt=day + 'T11:00:00+09:00',
+                      fare='11000', charge='0', applicationMethod='phone', priceStatus='fixed', timeStatus='planned',
+                      safetyInstructions='検証用の安全指示')
+        document_id = duty_id + '-acceptance'
+        acceptance = {'id': document_id, 'documentId': document_id, 'number': document_id,
+                      'reason': '', 'voided': False, 'kind': 'acceptance', 'createdAt': '2000-01-01T00:00:00Z',
+                      'issuerStaffId': staff['id'], 'issuerStaffName': staff['name'], 'values': values,
+                      'source': {'collection': 'jobPool', **{key: source_job[key] for key in ('id', 'title', 'start', 'end')}}}
+        call('/api/transport-documents?date=' + day, authenticated=False, expected=401)
+        call('/api/transport-documents', acceptance, method='POST', expected=201)
+        call('/api/transport-documents', acceptance, method='POST')  # Exact retry is idempotent.
+        modified = copy.deepcopy(acceptance); modified['values']['fare'] = '12000'
+        call('/api/transport-documents', modified, method='POST', expected=400)
+        raw, _ = call('/api/transport-documents?date=' + day)
+        assert [row for row in json.loads(raw)['records'] if row['id'] == document_id] == [acceptance]
+        event = {'id': duty_id + '-delivery', 'recordId': document_id, 'kind': 'delivery',
+                 'at': '2000-01-01T10:00:00+09:00', 'staffId': staff['id'], 'staffName': staff['name'],
+                 'recipient': '検証用申込者', 'method': '手渡し', 'note': '検証用の交付確認'}
+        call('/api/transport-documents/events', event, method='POST', expected=201)
+        call('/api/transport-documents/events', event, method='POST')
+        corrected = {**copy.deepcopy(acceptance), 'id': document_id + '-v2', 'supersedes': document_id,
+                     'reason': '確定額へ訂正', 'createdAt': '2000-01-02T00:00:00Z'}
+        corrected['values']['fare'] = '12000'
+        call('/api/transport-documents', corrected, method='POST', expected=201)
+        call('/api/transport-documents', {**corrected, 'id': document_id + '-stale'}, method='POST', expected=400)
+        call('/api/transport-documents/events', {**event, 'id': duty_id + '-stale-delivery'}, method='POST', expected=400)
+        raw, _ = call('/api/transport-documents?documentId=' + document_id)
+        saved = json.loads(raw)
+        assert saved['records'] == [acceptance, corrected] and saved['events'] == [event]
+        instruction_id = duty_id + '-instruction'
+        instruction = {**copy.deepcopy(acceptance), 'id': instruction_id, 'documentId': instruction_id,
+                       'number': instruction_id, 'kind': 'instruction', 'driverId': driver['id'],
+                       'driverName': driver['name'], 'vehicleId': vehicle['id'], 'vehiclePlate': vehicle['plateNo']}
+        call('/api/transport-documents', instruction, method='POST', expected=201)
+        call('/api/transport-documents/events', {**event, 'id': duty_id + '-instruction-event',
+                                               'recordId': instruction_id, 'kind': 'instruction',
+                                               'recipient': driver['name'], 'note': '指示と携行方法の確認'}, method='POST', expected=201)
+        cancelled = {**corrected, 'id': document_id + '-v3', 'supersedes': corrected['id'], 'voided': True, 'reason': '検証用の取消'}
+        call('/api/transport-documents', cancelled, method='POST', expected=201)
+        raw, _ = call('/api/workspace')
+        assert json.loads(raw)['value'] == changed and json.loads(raw)['revision'] == final_revision
+        checks.append('transport_documents_separate_storage_retry_immutable_history_corrections_cancellation_and_delivery')
+        checks.append('operation_instruction_assigned_driver_vehicle_and_confirmation_persist')
         result['checks'] = checks
         print(json.dumps(result))
     finally:

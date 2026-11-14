@@ -48,7 +48,19 @@ def initialize():
                 CREATE TABLE IF NOT EXISTS login_attempts (
                     address text PRIMARY KEY, attempts integer NOT NULL, started_at timestamptz NOT NULL DEFAULT now());
                 CREATE TABLE IF NOT EXISTS workspace_history (
-                    revision bigint PRIMARY KEY, value jsonb NOT NULL, saved_at timestamptz NOT NULL DEFAULT now());''')
+                    revision bigint PRIMARY KEY, value jsonb NOT NULL, saved_at timestamptz NOT NULL DEFAULT now());
+                CREATE TABLE IF NOT EXISTS transport_documents (
+                    id text PRIMARY KEY, document_id text NOT NULL,
+                    supersedes text UNIQUE REFERENCES transport_documents(id),
+                    service_date date NOT NULL, retain_until date NOT NULL,
+                    value jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+                CREATE INDEX IF NOT EXISTS transport_documents_day ON transport_documents(service_date);
+                CREATE INDEX IF NOT EXISTS transport_documents_history ON transport_documents(document_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS transport_documents_number ON transport_documents((value->>'number')) WHERE supersedes IS NULL;
+                CREATE TABLE IF NOT EXISTS transport_document_events (
+                    id text PRIMARY KEY, record_id text NOT NULL REFERENCES transport_documents(id),
+                    value jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+                CREATE INDEX IF NOT EXISTS transport_document_events_record ON transport_document_events(record_id);''')
     finally:
         POOL.putconn(conn)
 
@@ -505,6 +517,185 @@ def preserve_duty_logs(previous, current):
                 raise ValueError('実際に実施した日時を入力してください。未来の実績は保存できません。')
 
 
+TRANSPORT_FIELDS = {
+    'issuerName', 'officeName', 'issuerAddress', 'issuerPhone', 'emergencyContact', 'serviceArea',
+    'applicantName', 'applicantContact', 'methodDetail', 'operationStartPlace', 'operationStartAt',
+    'operationEndPlace', 'operationEndAt', 'boardingPlace', 'boardingAt', 'alightingPlace', 'alightingAt',
+    'fare', 'charge', 'chargeDetails', 'priceBasis', 'route', 'safetyInstructions', 'notes',
+    'applicationMethod', 'priceStatus', 'timeStatus'}
+TRANSPORT_LONG_FIELDS = {'chargeDetails', 'priceBasis', 'route', 'safetyInstructions', 'notes'}
+TRANSPORT_TIMES = ('operationStartAt', 'boardingAt', 'alightingAt', 'operationEndAt')
+
+
+def transport_staff(identifier, name, kind, workspace, at):
+    member = next((row for row in workspace.get('staffMembers', []) if row['id'] == identifier), None)
+    if not member or not member['active'] or member['name'] != name:
+        raise ValueError('職員台帳から有効な担当者を選択してください。')
+    if kind == 'instruction':
+        appointed = ledger_date(member.get('appointmentDate'))
+        if member['role'] != 'manager' or appointed is None or appointed > at.astimezone(timezone(timedelta(hours=9))).date():
+            raise ValueError('選任済みの運行管理者を指定してください。')
+
+
+def transport_retention(end):
+    day = duty_timestamp(end, '運行終了日時').date()
+    try:
+        return day.replace(year=day.year + 3)
+    except ValueError:
+        return day.replace(year=day.year + 3, day=28)
+
+
+def validate_transport_document(row, workspace, original=None):
+    if not isinstance(row, dict) or set(row) - {'id', 'documentId', 'number', 'supersedes', 'reason', 'voided', 'kind', 'createdAt', 'source', 'issuerStaffId', 'issuerStaffName', 'driverId', 'driverName', 'vehicleId', 'vehiclePlate', 'values'}:
+        raise ValueError('帳票データの形式を確認してください。')
+    for key in ('id', 'documentId', 'number', 'issuerStaffId', 'issuerStaffName'):
+        ledger_text(row.get(key), 200, '帳票の登録情報', required=True)
+    kind = row.get('kind')
+    if kind not in ('acceptance', 'instruction') or type(row.get('voided')) is not bool:
+        raise ValueError('帳票の種類・取消区分を確認してください。')
+    created = duty_timestamp(row.get('createdAt'), '帳票作成日時', japan=False)
+    if created.timestamp() > time.time() + 300:
+        raise ValueError('未来の作成実績は記録できません。')
+    transport_staff(row['issuerStaffId'], row['issuerStaffName'], kind, workspace, created)
+    values = row.get('values')
+    if not isinstance(values, dict) or set(values) != TRANSPORT_FIELDS:
+        raise ValueError('帳票の記載項目をすべて指定してください。')
+    required = {'issuerName', 'officeName', 'issuerPhone', 'applicantName', 'applicantContact',
+                'operationStartPlace', 'operationEndPlace', 'boardingPlace', 'alightingPlace', *TRANSPORT_TIMES}
+    required |= {'issuerAddress', 'emergencyContact', 'serviceArea', 'fare', 'charge'} if kind == 'acceptance' else {'safetyInstructions'}
+    for key in TRANSPORT_FIELDS:
+        ledger_text(values.get(key), 2000 if key in TRANSPORT_LONG_FIELDS else 200, '帳票の記載内容：' + key, required=key in required)
+    times = [duty_timestamp(values[key], '運行・乗降日時') for key in TRANSPORT_TIMES]
+    if times != sorted(times) or times[0] >= times[-1]:
+        raise ValueError('運行開始→乗車→降車→運行終了の日時を確認してください。')
+    transport_retention(values['operationEndAt'])
+    if values['timeStatus'] not in ('planned', 'confirmed') or values['priceStatus'] not in ('fixed', 'estimate'):
+        raise ValueError('予定・確定の区分を指定してください。')
+    if kind == 'acceptance':
+        method = values['applicationMethod']
+        if method not in ('phone', 'visit', 'email', 'app', 'web', 'sns', 'other'):
+            raise ValueError('申込方法を選択してください。')
+        if method in ('app', 'web', 'sns', 'other'):
+            ledger_text(values['methodDetail'], 200, '申込方法の名称・詳細', required=True)
+        for key in ('fare', 'charge'):
+            if not re.fullmatch(r'\d{1,10}', values[key]) or int(values[key]) > 9999999999:
+                raise ValueError('運賃・料金は税込の円単位で入力してください。')
+        if values['priceStatus'] == 'estimate':
+            ledger_text(values['priceBasis'], 2000, '概算額の算出根拠', required=True)
+    source = row.get('source')
+    if not isinstance(source, dict) or set(source) != {'collection', 'id', 'title', 'start', 'end'} or source.get('collection') not in ('bookings', 'jobPool'):
+        raise ValueError('元の予約を指定してください。')
+    ledger_text(source.get('id'), 200, '予約ID', required=True)
+    ledger_text(source.get('title'), 200, '予約名', required=True)
+    interval(source)
+    previous = row.get('supersedes')
+    ledger_text(row.get('reason'), 2000, '訂正・取消の理由', required=bool(previous))
+    if previous:
+        if not original or previous != original['id'] or any(row.get(key) != original.get(key) for key in ('documentId', 'number', 'kind', 'source', 'driverId', 'driverName', 'vehicleId', 'vehiclePlate')):
+            raise ValueError('最新の帳票を開き、理由を付けて訂正してください。')
+        if created < duty_timestamp(original['createdAt'], '元の作成日時', japan=False):
+            raise ValueError('訂正の作成日時を確認してください。')
+    else:
+        if row['documentId'] != row['id'] or row['voided']:
+            raise ValueError('新規帳票の識別子・取消区分を確認してください。')
+        job = next((item for item in workspace[source['collection']] if str(item['id']) == source['id']), None)
+        if not job or any(source[key] != job.get(key) for key in ('title', 'start', 'end')):
+            raise ValueError('予約が更新されています。最新の予約から作り直してください。')
+        if kind == 'instruction':
+            driver = next((item for item in workspace['drivers'] if item['id'] == job.get('driverId')), None)
+            vehicle = next((item for item in workspace['vehicles'] if item['id'] == job.get('vehicleId')), None)
+            if not driver or driver.get('status') != 'active' or not vehicle or not vehicle.get('plateNo') or row.get('driverId') != driver['id'] or row.get('driverName') != driver.get('name') or row.get('vehicleId') != vehicle['id'] or row.get('vehiclePlate') != vehicle.get('plateNo'):
+                raise ValueError('予約に指定された有効な運転者・車両の情報を確認してください。')
+    if kind == 'instruction':
+        if type(row.get('driverId')) is not int or type(row.get('vehicleId')) is not int:
+            raise ValueError('運転者・車両の識別子を確認してください。')
+        for key in ('driverName', 'vehiclePlate'):
+            ledger_text(row.get(key), 200, '運転者氏名・自動車登録番号', required=True)
+
+
+def validate_transport_event(row, document, workspace):
+    if not isinstance(row, dict) or set(row) != {'id', 'recordId', 'kind', 'at', 'staffId', 'staffName', 'recipient', 'method', 'note'}:
+        raise ValueError('交付・指示記録の形式を確認してください。')
+    for key in ('id', 'recordId', 'staffId', 'staffName', 'recipient', 'method', 'note'):
+        ledger_text(row.get(key), 2000 if key == 'note' else 200, '交付・指示の記録内容', required=True)
+    if row['recordId'] != document['id'] or row['kind'] != ('delivery' if document['kind'] == 'acceptance' else 'instruction') or document['voided']:
+        raise ValueError('有効な最新の帳票に対して実施結果を記録してください。')
+    at = duty_timestamp(row.get('at'), '実施日時')
+    if at.timestamp() > time.time() + 300 or at < duty_timestamp(document['createdAt'], '帳票作成日時', japan=False):
+        raise ValueError('実施日時は帳票作成後・現在以前で入力してください。')
+    transport_staff(row['staffId'], row['staffName'], document['kind'], workspace, at)
+
+
+def transport_api(handler, cur, conn, method, path):
+    if method == 'GET' and path == '/api/transport-documents':
+        query = parse_qs(urlsplit(handler.path).query)
+        document_id = query.get('documentId', [''])[0]
+        if document_id:
+            ledger_text(document_id, 200, '帳票ID', required=True)
+            cur.execute('SELECT value FROM transport_documents WHERE document_id=%s ORDER BY created_at,id LIMIT 501', (document_id,))
+            records = [row[0] for row in cur.fetchall()]
+            if len(records) > 500:
+                raise ValueError('訂正履歴が多いため、管理担当へ帳票の抽出を依頼してください。')
+            cur.execute('SELECT e.value FROM transport_document_events e JOIN transport_documents d ON d.id=e.record_id WHERE d.document_id=%s ORDER BY e.created_at,e.id', (document_id,))
+            handler.send(200, {'records': records, 'events': [row[0] for row in cur.fetchall()]})
+        else:
+            day = ledger_date(query.get('date', [''])[0])
+            offset = int(query.get('offset', ['0'])[0])
+            if day is None or not 0 <= offset <= 10000000:
+                raise ValueError('利用日と表示位置を確認してください。')
+            cur.execute('''SELECT d.value FROM transport_documents d WHERE d.service_date=%s
+                           AND NOT EXISTS(SELECT 1 FROM transport_documents n WHERE n.supersedes=d.id)
+                           ORDER BY d.created_at DESC,d.id DESC LIMIT 51 OFFSET %s''', (day, offset))
+            records = [row[0] for row in cur.fetchall()]
+            handler.send(200, {'records': records[:50], 'hasMore': len(records) > 50})
+        return
+    if method != 'POST' or path not in ('/api/transport-documents', '/api/transport-documents/events'):
+        handler.send(404, {'error': '見つかりません。'})
+        return
+    row = json.loads(handler.body(64 * 1024))
+    if not isinstance(row, dict):
+        raise ValueError('帳票の形式を確認してください。')
+    ledger_text(row.get('id'), 200, '記録ID', required=True)
+    is_event = path.endswith('/events')
+    table = 'transport_document_events' if is_event else 'transport_documents'
+    cur.execute('SELECT value FROM ' + table + ' WHERE id=%s', (row['id'],))
+    existing = cur.fetchone()
+    if existing:
+        if existing[0] != row:
+            raise ValueError('同じ記録IDで異なる内容は保存できません。')
+        handler.send(200, {'event' if is_event else 'record': existing[0]})
+        return
+    reference = row.get('recordId') if is_event else row.get('supersedes')
+    original = None
+    if reference:
+        ledger_text(reference, 200, '元の記録ID', required=True)
+        cur.execute('SELECT value FROM transport_documents WHERE id=%s FOR UPDATE', (reference,))
+        found = cur.fetchone()
+        original = found[0] if found else None
+        cur.execute('SELECT 1 FROM transport_documents WHERE supersedes=%s', (reference,))
+        if not original or cur.fetchone():
+            raise ValueError('帳票が更新されています。最新の版を開いてください。')
+    cur.execute('SELECT value FROM workspace WHERE id=1 FOR SHARE')
+    workspace = cur.fetchone()[0]
+    if is_event:
+        if original is None:
+            raise ValueError('交付・指示の対象帳票を指定してください。')
+        validate_transport_event(row, original, workspace)
+        cur.execute('INSERT INTO transport_document_events(id,record_id,value) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING RETURNING id', (row['id'], row['recordId'], Json(row)))
+    else:
+        validate_transport_document(row, workspace, original)
+        cur.execute('''INSERT INTO transport_documents(id,document_id,supersedes,service_date,retain_until,value)
+                       VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING RETURNING id''',
+                    (row['id'], row['documentId'], row.get('supersedes'), ledger_date(row['values']['boardingAt'][:10]), transport_retention(row['values']['operationEndAt']), Json(row)))
+    if not cur.fetchone():
+        cur.execute('SELECT value FROM ' + table + ' WHERE id=%s', (row['id'],))
+        concurrent = cur.fetchone()
+        if not concurrent or concurrent[0] != row:
+            raise ValueError('同じ帳票番号・訂正元の記録が既にあります。最新の版を確認してください。')
+    conn.commit()
+    handler.send(201, {'event' if is_event else 'record': row})
+
+
 def validate(value):
     if not isinstance(value, dict) or not ALLOWED.issubset(value) or set(value) - ALLOWED - {'dutyLogs', 'staffMembers', *INSPECTION_COLLECTIONS}:
         raise ValueError('保存データの形式が正しくありません。')
@@ -628,6 +819,8 @@ class Handler(BaseHTTPRequestHandler):
                         cur.execute('DELETE FROM sessions WHERE token=%s', (hashlib.sha256(token.encode()).hexdigest(),))
                         conn.commit()
                         self.send(200, {'ok': True}, headers={'Set-Cookie': 'hire_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0'})
+                    elif path.startswith('/api/transport-documents'):
+                        transport_api(self, cur, conn, method, path)
                     elif path == '/api/workspace' and method == 'GET':
                         cur.execute('SELECT revision,value FROM workspace WHERE id=1')
                         row = cur.fetchone()
@@ -642,6 +835,10 @@ class Handler(BaseHTTPRequestHandler):
                             return
                         preserve_duty_logs(old_value, payload['value'])
                         preserve_inspections(old_value, payload['value'])
+                        staff_ids = [row['id'] for row in payload['value'].get('staffMembers', [])]
+                        cur.execute("SELECT 1 FROM transport_documents WHERE NOT ((value->>'issuerStaffId')=ANY(%s)) UNION ALL SELECT 1 FROM transport_document_events WHERE NOT ((value->>'staffId')=ANY(%s)) LIMIT 1", (staff_ids, staff_ids))
+                        if cur.fetchone():
+                            raise ValueError('帳票で使用した職員は削除できません。利用状態を変更してください。')
                         if old_value:
                             cur.execute('INSERT INTO workspace_history(revision,value) VALUES(%s,%s) ON CONFLICT DO NOTHING', (current, Json(old_value)))
                         cur.execute('UPDATE workspace SET revision=revision+1,value=%s,updated_at=now() WHERE id=1', (Json(payload['value']),))

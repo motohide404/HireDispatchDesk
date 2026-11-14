@@ -6,6 +6,7 @@ import DriverLedgerPage from "./components/DriverLedgerPage";
 import PartnerLedgerPage from "./components/PartnerLedgerPage";
 import JobEntryPage from "./components/JobEntryPage";
 import DutyLogPage from "./components/DutyLogPage";
+import TransportDocumentsPage from "./components/TransportDocumentsPage";
 import DailyInspectionPage from "./components/DailyInspectionPage";
 import StaffLedgerPage from "./components/StaffLedgerPage";
 import { createJobRow, hasJobInput, type JobEntryRow, type NewWorkJob } from "./lib/jobEntry";
@@ -18,7 +19,7 @@ import {
 } from "./data/drivers";
 import { createDispatchVehicles, vehicleLedger, vehicleMaintenanceRecords } from "./data/vehicles";
 
-type ActivePage = "dispatch" | "jobs" | "duties" | "staff" | "inspections" | "vehicles" | "drivers" | "partners" | "invoices";
+type ActivePage = "dispatch" | "jobs" | "duties" | "staff" | "inspections" | "documents" | "vehicles" | "drivers" | "partners" | "invoices";
 
 type NavItem = {
   key: ActivePage;
@@ -27,6 +28,7 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
+  { key: 'documents', label: '受書・運行指示書', description: '予約から受書と運行指示書を作成・保存・印刷します。' },
   { key: 'inspections', label: '日常点検', description: '乗用車の日常点検と整備管理者の確認を記録します。' },
   { key: 'duties', label: '点呼・出勤簿', description: '勤務ごとの出退勤と点呼を記録し、履歴を残します。' },
   { key: 'staff', label: '職員台帳', description: '運行管理者・補助者・事務員を登録します。' },
@@ -199,7 +201,7 @@ export default function App() {
         onDateChange={setDispatchDate}
       />
     );
-  } else if (activePage === "jobs" || activePage === "duties" || activePage === "staff" || activePage === "inspections") {
+  } else if (activePage === "jobs" || activePage === "duties" || activePage === "staff" || activePage === "inspections" || activePage === "documents") {
     pageContent = <></>;
   } else if (activePage === "vehicles") {
     pageContent = (
@@ -268,6 +270,7 @@ export default function App() {
       </header>
       <main className="flex-1">
         {pageContent}
+        <div hidden={activePage !== 'documents'}><TransportDocumentsPage drivers={drivers} vehicles={vehicles} /></div>
         <div hidden={activePage !== 'duties'}><DutyLogPage drivers={drivers} vehicles={vehicles} /></div>
         <div hidden={activePage !== 'inspections'}><DailyInspectionPage drivers={drivers} vehicles={vehicles} /></div>
         <div hidden={activePage !== 'staff'}><StaffLedgerPage /></div>

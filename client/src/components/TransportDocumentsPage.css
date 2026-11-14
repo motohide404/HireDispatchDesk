@@ -1,0 +1,11 @@
+.transport-document th, .transport-document td { overflow-wrap: anywhere; }
+@media print {
+  @page { size: A4; margin: 12mm; }
+  body:has(#transport-document-print) > *:not(#transport-document-print) { display: none !important; }
+  #transport-document-print { position: static !important; overflow: visible !important; padding: 0 !important; background: white !important; }
+  #transport-document-print .document-controls { display: none !important; }
+  #transport-document-print .document-panel { margin: 0 !important; padding: 0 !important; max-width: none !important; }
+  .transport-document { font-size: 10pt; color: black; }
+  .transport-document th, .transport-document td { border-color: #555; }
+  .transport-document tr { break-inside: avoid; }
+}
