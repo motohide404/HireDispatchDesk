@@ -9,7 +9,7 @@ from pathlib import Path
 import secrets
 import struct
 import threading
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 from http.server import ThreadingHTTPServer
 import urllib.error
 import urllib.request
@@ -47,12 +47,12 @@ def main():
             app.validate(original)
             archive_hash = hashlib.sha256()
             archive_counts = {}
-            for table in ('transport_documents', 'transport_document_events'):
+            for table in ('transport_documents', 'transport_document_events', 'transport_document_settings'):
                 cur.execute('SELECT to_regclass(%s)', (table,))
                 present = cur.fetchone()[0]
                 rows = []
                 if present:
-                    cur.execute('SELECT * FROM ' + table + ' ORDER BY id')
+                    cur.execute('SELECT * FROM ' + table + (' WHERE revision>0' if table == 'transport_document_settings' else '') + ' ORDER BY id')
                     rows = cur.fetchall()
                 archive_counts[table] = len(rows)
                 archive_hash.update(json.dumps(rows, sort_keys=True, ensure_ascii=False, default=str).encode())
@@ -123,7 +123,7 @@ def main():
         checks.append('photo_upload_inline_download_and_authentication')
         changed = copy.deepcopy(original)
         assert changed['drivers'] and changed['vehicles'] and changed['partners']
-        today = date.today()
+        today = datetime.now(timezone(timedelta(hours=9))).date()
         future_job_ids = []
         for days in (1, 30, 365):
             job_id = 'release-future-' + secrets.token_hex(6)
@@ -302,10 +302,26 @@ def main():
         raw, _ = call('/api/transport-documents?documentId=' + document_id)
         saved = json.loads(raw)
         assert saved['records'] == [acceptance, corrected] and saved['events'] == [event]
+        raw, _ = call('/api/transport-documents?sourceCollection=jobPool&sourceId=' + source_job['id'])
+        assert json.loads(raw)['records'] == [corrected]
+        raw, _ = call('/api/transport-documents/settings')
+        old_settings = json.loads(raw)
+        profile = {'issuerName': '検証用の会社設定', 'depotPlace': '検証用車庫'}
+        payload = {'revision': old_settings['revision'], 'profile': profile}
+        raw, _ = call('/api/transport-documents/settings', payload, method='POST')
+        settings = json.loads(raw)
+        assert settings['profile'] == profile
+        raw, _ = call('/api/transport-documents/settings', payload, method='POST')
+        assert json.loads(raw)['revision'] == settings['revision']
+        call('/api/transport-documents/settings', {**payload, 'profile': {'depotPlace': '古い設定からの上書き'}}, method='POST', expected=409)
+        raw, _ = call('/api/transport-documents?documentId=' + document_id)
+        assert json.loads(raw)['records'] == [acceptance, corrected]
         instruction_id = duty_id + '-instruction'
         instruction = {**copy.deepcopy(acceptance), 'id': instruction_id, 'documentId': instruction_id,
                        'number': instruction_id, 'kind': 'instruction', 'driverId': driver['id'],
                        'driverName': driver['name'], 'vehicleId': vehicle['id'], 'vehiclePlate': vehicle['plateNo']}
+        for key in ('issuerName', 'officeName', 'issuerPhone', 'boardingPlace', 'alightingPlace', 'safetyInstructions'):
+            instruction['values'][key] = ''
         call('/api/transport-documents', instruction, method='POST', expected=201)
         call('/api/transport-documents/events', {**event, 'id': duty_id + '-instruction-event',
                                                'recordId': instruction_id, 'kind': 'instruction',
@@ -316,6 +332,7 @@ def main():
         assert json.loads(raw)['value'] == changed and json.loads(raw)['revision'] == final_revision
         checks.append('transport_documents_separate_storage_retry_immutable_history_corrections_cancellation_and_delivery')
         checks.append('operation_instruction_assigned_driver_vehicle_and_confirmation_persist')
+        checks.append('shared_company_depot_settings_persist_without_rewriting_documents_and_related_receipt_lookup')
         result['checks'] = checks
         print(json.dumps(result))
     finally:

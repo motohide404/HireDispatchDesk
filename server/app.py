@@ -61,6 +61,10 @@ def initialize():
                     id text PRIMARY KEY, record_id text NOT NULL REFERENCES transport_documents(id),
                     value jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
                 CREATE INDEX IF NOT EXISTS transport_document_events_record ON transport_document_events(record_id);''')
+            cur.execute('''CREATE TABLE IF NOT EXISTS transport_document_settings (
+                id integer PRIMARY KEY CHECK(id=1), revision integer NOT NULL DEFAULT 0,
+                value jsonb NOT NULL DEFAULT '{}'::jsonb);
+                INSERT INTO transport_document_settings(id) VALUES(1) ON CONFLICT DO NOTHING;''')
     finally:
         POOL.putconn(conn)
 
@@ -560,11 +564,14 @@ def validate_transport_document(row, workspace, original=None):
     values = row.get('values')
     if not isinstance(values, dict) or set(values) != TRANSPORT_FIELDS:
         raise ValueError('帳票の記載項目をすべて指定してください。')
-    required = {'issuerName', 'officeName', 'issuerPhone', 'applicantName', 'applicantContact',
+    required = {'applicantName', 'applicantContact',
                 'operationStartPlace', 'operationEndPlace', 'boardingPlace', 'alightingPlace', *TRANSPORT_TIMES}
-    required |= {'issuerAddress', 'emergencyContact', 'serviceArea', 'fare', 'charge'} if kind == 'acceptance' else {'safetyInstructions'}
+    if kind == 'acceptance':
+        required |= {'issuerName', 'officeName', 'issuerPhone', 'issuerAddress', 'emergencyContact', 'serviceArea', 'fare', 'charge'}
+    else:
+        required -= {'boardingPlace', 'alightingPlace'}
     for key in TRANSPORT_FIELDS:
-        ledger_text(values.get(key), 2000 if key in TRANSPORT_LONG_FIELDS else 200, '帳票の記載内容：' + key, required=key in required)
+        ledger_text(values.get(key), 2000 if key in TRANSPORT_LONG_FIELDS else 512 if key == 'applicantContact' else 200, '帳票の記載内容：' + key, required=key in required)
     times = [duty_timestamp(values[key], '運行・乗降日時') for key in TRANSPORT_TIMES]
     if times != sorted(times) or times[0] >= times[-1]:
         raise ValueError('運行開始→乗車→降車→運行終了の日時を確認してください。')
@@ -617,7 +624,7 @@ def validate_transport_event(row, document, workspace):
     if not isinstance(row, dict) or set(row) != {'id', 'recordId', 'kind', 'at', 'staffId', 'staffName', 'recipient', 'method', 'note'}:
         raise ValueError('交付・指示記録の形式を確認してください。')
     for key in ('id', 'recordId', 'staffId', 'staffName', 'recipient', 'method', 'note'):
-        ledger_text(row.get(key), 2000 if key == 'note' else 200, '交付・指示の記録内容', required=True)
+        ledger_text(row.get(key), 2000 if key == 'note' else 200, '交付・指示の記録内容', required=key != 'note')
     if row['recordId'] != document['id'] or row['kind'] != ('delivery' if document['kind'] == 'acceptance' else 'instruction') or document['voided']:
         raise ValueError('有効な最新の帳票に対して実施結果を記録してください。')
     at = duty_timestamp(row.get('at'), '実施日時')
@@ -626,9 +633,48 @@ def validate_transport_event(row, document, workspace):
     transport_staff(row['staffId'], row['staffName'], document['kind'], workspace, at)
 
 
+def validate_document_profile(profile):
+    keys = {'issuerName', 'officeName', 'issuerAddress', 'issuerPhone', 'emergencyContact', 'serviceArea', 'depotPlace'}
+    if not isinstance(profile, dict) or set(profile) - keys:
+        raise ValueError('会社・車庫の設定項目を確認してください。')
+    for key, value in profile.items():
+        ledger_text(value, 200, '会社・車庫の設定')
+
+
 def transport_api(handler, cur, conn, method, path):
+    if path == '/api/transport-documents/settings' and method in ('GET', 'POST'):
+        cur.execute('SELECT revision,value FROM transport_document_settings WHERE id=1' + (' FOR UPDATE' if method == 'POST' else ''))
+        revision, profile = cur.fetchone()
+        if method == 'POST':
+            payload = json.loads(handler.body(16384))
+            if not isinstance(payload, dict) or type(payload.get('revision')) is not int:
+                raise ValueError('会社・車庫の設定形式を確認してください。')
+            validate_document_profile(payload.get('profile'))
+            if profile != payload['profile']:
+                if payload['revision'] != revision:
+                    handler.send(409, {'error': '設定が更新されています。入力内容を控え、最新の設定を開いてください。'})
+                    return
+                profile = payload['profile']
+                revision += 1
+                cur.execute('UPDATE transport_document_settings SET revision=%s,value=%s WHERE id=1', (revision, Json(profile)))
+                conn.commit()
+        handler.send(200, {'revision': revision, 'profile': profile})
+        return
     if method == 'GET' and path == '/api/transport-documents':
         query = parse_qs(urlsplit(handler.path).query)
+        if 'sourceId' in query:
+            collection = query.get('sourceCollection', [''])[0]
+            identifier = query['sourceId'][0]
+            if collection not in ('bookings', 'jobPool'):
+                raise ValueError('元の予約を確認してください。')
+            ledger_text(identifier, 200, '予約ID', required=True)
+            cur.execute('''SELECT d.value FROM transport_documents d
+                           WHERE d.value->'source'->>'collection'=%s AND d.value->'source'->>'id'=%s
+                           AND d.value->>'kind'='acceptance' AND d.value->>'voided'='false'
+                           AND NOT EXISTS(SELECT 1 FROM transport_documents n WHERE n.supersedes=d.id)
+                           ORDER BY d.created_at DESC,d.id DESC LIMIT 1''', (collection, identifier))
+            handler.send(200, {'records': [row[0] for row in cur.fetchall()]})
+            return
         document_id = query.get('documentId', [''])[0]
         if document_id:
             ledger_text(document_id, 200, '帳票ID', required=True)
