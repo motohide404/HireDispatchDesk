@@ -47,7 +47,7 @@ def main():
             app.validate(original)
             archive_hash = hashlib.sha256()
             archive_counts = {}
-            for table in ('transport_documents', 'transport_document_events', 'transport_document_settings'):
+            for table in ('transport_documents', 'transport_document_events', 'transport_document_settings', 'daily_reports'):
                 cur.execute('SELECT to_regclass(%s)', (table,))
                 present = cur.fetchone()[0]
                 rows = []
@@ -339,6 +339,34 @@ def main():
         checks.append('transport_documents_separate_storage_retry_immutable_history_corrections_cancellation_and_delivery')
         checks.append('operation_instruction_assigned_driver_vehicle_and_confirmation_persist')
         checks.append('shared_company_depot_settings_persist_without_rewriting_documents_and_related_receipt_lookup')
+        # Daily reports are tested only in this disposable database, never in the active workspace.
+        daily = dict(id=duty_id+'-daily-v1', reportId=duty_id+'-daily', version=1, date=day,
+                     driverId=driver['id'], driverName=driver['name'], vehicleId=vehicle['id'], vehiclePlate=vehicle['plateNo'],
+                     office='検証営業所', status='draft', reason='', savedAt='2000-01-01T00:00:00Z',
+                     startAt=day+'T08:00', startPlace='車庫', startOdometer='12990', dutyStart='', dutyEnd='', notes='', rows=[])
+        call('/api/daily-reports?date='+day+'&driverId='+str(driver['id']), authenticated=False, expected=401)
+        call('/api/daily-reports', daily, method='POST', expected=201)
+        call('/api/daily-reports', daily, method='POST')
+        edited=copy.deepcopy(daily);edited['notes']='同じIDの改変'
+        call('/api/daily-reports', edited, method='POST', expected=400)
+        submitted={**copy.deepcopy(daily), 'id':duty_id+'-daily-v2', 'version':2, 'status':'submitted',
+                   'rows':[dict(id='daily-line',kind='passenger',startAt=day+'T09:00',endAt=day+'T10:00',
+                                **{'from':'乗車地','to':'降車地'},meter='025',rollover=True,passengers='2',note='',
+                                instructionId=instruction_id,jobLabel=source_job['title'],
+                                plannedStart=instruction['values']['boardingAt'],plannedEnd=instruction['values']['alightingAt'])]}
+        call('/api/daily-reports', submitted, method='POST', expected=201)
+        stale={**submitted,'id':duty_id+'-daily-stale'}
+        call('/api/daily-reports', stale, method='POST', expected=409)
+        corrected_daily={**copy.deepcopy(submitted),'id':duty_id+'-daily-v3','version':3,'reason':'帰着時刻を訂正'}
+        corrected_daily['rows'][0]['endAt']=day+'T10:05'
+        call('/api/daily-reports', corrected_daily, method='POST', expected=201)
+        raw,_=call('/api/daily-reports?reportId='+daily['reportId'])
+        assert json.loads(raw)['records']==[corrected_daily,submitted,daily]
+        raw,_=call('/api/daily-reports?date='+day+'&driverId='+str(driver['id']))
+        assert json.loads(raw)['record']==corrected_daily
+        call('/api/daily-reports', {}, method='PUT', expected=404)
+        raw,_=call('/api/workspace');assert json.loads(raw)['value']==changed
+        checks.append('daily_report_draft_submission_instruction_link_retry_conflict_and_immutable_corrections')
         result['checks'] = checks
         print(json.dumps(result))
     finally:

@@ -65,6 +65,12 @@ def initialize():
                 id integer PRIMARY KEY CHECK(id=1), revision integer NOT NULL DEFAULT 0,
                 value jsonb NOT NULL DEFAULT '{}'::jsonb);
                 INSERT INTO transport_document_settings(id) VALUES(1) ON CONFLICT DO NOTHING;''')
+            cur.execute('''CREATE TABLE IF NOT EXISTS daily_reports (
+                id text PRIMARY KEY, report_id text NOT NULL, version integer NOT NULL,
+                service_date date NOT NULL, driver_id bigint NOT NULL, value jsonb NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(report_id,version));
+                CREATE UNIQUE INDEX IF NOT EXISTS daily_reports_driver_day ON daily_reports(service_date,driver_id) WHERE version=1;
+                CREATE INDEX IF NOT EXISTS daily_reports_lookup ON daily_reports(service_date,driver_id,version DESC);''')
     finally:
         POOL.putconn(conn)
 
@@ -762,6 +768,149 @@ def transport_api(handler, cur, conn, method, path):
     handler.send(201, {'event' if is_event else 'record': row})
 
 
+DAILY_KINDS = {'deadhead', 'passenger', 'waiting', 'break', 'handover', 'other'}
+DAILY_ROW_FIELDS = {'id', 'kind', 'startAt', 'endAt', 'from', 'to', 'meter', 'rollover', 'passengers', 'note', 'instructionId', 'jobLabel', 'plannedStart', 'plannedEnd'}
+DAILY_FIELDS = {'id', 'reportId', 'version', 'date', 'driverId', 'driverName', 'vehicleId', 'vehiclePlate', 'office', 'status', 'reason', 'savedAt', 'startAt', 'startPlace', 'startOdometer', 'dutyStart', 'dutyEnd', 'notes', 'rows'}
+
+
+def daily_time(value):
+    if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}', value):
+        raise ValueError('日報の実時刻は年月日と時分で入力してください。')
+    return datetime.fromisoformat(value).replace(tzinfo=timezone(timedelta(hours=9)))
+
+
+def validate_daily_report(row, workspace, original=None):
+    if not isinstance(row, dict) or set(row) != DAILY_FIELDS:
+        raise ValueError('日報の形式を確認してください。')
+    for key in ('id', 'reportId'):
+        ledger_text(row.get(key), 100, '日報ID', True)
+    if type(row['version']) is not int or row['version'] < 1 or row['status'] not in ('draft', 'submitted'):
+        raise ValueError('日報の版と提出状態を確認してください。')
+    if ledger_date(row['date']) is None:
+        raise ValueError('運行日を入力してください。')
+    duty_timestamp(row['savedAt'], '保存日時', japan=False)
+    for key, size in [('driverName', 100), ('vehiclePlate', 100), ('office', 100), ('reason', 500), ('startPlace', 100), ('notes', 2000)]:
+        ledger_text(row[key], size, key)
+    if type(row['driverId']) is not int or type(row['vehicleId']) is not int:
+        raise ValueError('乗務員と車両を指定してください。')
+    if original:
+        for key in ('reportId', 'date', 'driverId', 'driverName', 'vehicleId', 'vehiclePlate'):
+            if original[key] != row[key]:
+                raise ValueError('日報の乗務員・車両・運行日は変更できません。')
+        if row['version'] != original['version'] + 1:
+            raise ValueError('日報が更新されています。最新の版を開いてください。')
+        if original['status'] == 'submitted' and (row['status'] != 'submitted' or not row['reason'].strip()):
+            raise ValueError('提出済み日報は理由を付けて訂正してください。')
+    else:
+        driver = next((d for d in workspace.get('drivers', []) if d['id'] == row['driverId'] and d.get('status') == 'active'), None)
+        vehicle = next((v for v in workspace.get('vehicles', []) if v['id'] == row['vehicleId']), None)
+        if row['version'] != 1 or not driver or not vehicle or driver['name'] != row['driverName'] or vehicle.get('plateNo') != row['vehiclePlate']:
+            raise ValueError('乗務員・車両または日報の版を確認してください。')
+    if not isinstance(row['rows'], list) or len(row['rows']) > 1000:
+        raise ValueError('日報の記録件数を確認してください。')
+    for key in ('startAt', 'dutyStart', 'dutyEnd'):
+        if row[key]: daily_time(row[key])
+        elif not isinstance(row[key], str): raise ValueError('時刻を確認してください。')
+    if not isinstance(row['startOdometer'], str) or (row['startOdometer'] and not re.fullmatch(r'\d{1,7}', row['startOdometer'])):
+        raise ValueError('出庫メーターは積算kmを入力してください。')
+    submitted = row['status'] == 'submitted'
+    if submitted and (not row['startAt'] or not row['startOdometer'] or not row['startPlace'].strip() or not row['rows'] or row['startAt'][:10] != row['date']):
+        raise ValueError('出庫の日時・地点・積算kmと運行明細を確認してください。')
+    previous_time = daily_time(row['startAt']) if row['startAt'] else None
+    previous_meter = int(row['startOdometer']) % 1000 if row['startOdometer'] else None
+    seen = set()
+    for index, item in enumerate(row['rows'], 1):
+        if not isinstance(item, dict) or set(item) != DAILY_ROW_FIELDS or item.get('kind') not in DAILY_KINDS:
+            raise ValueError('運行明細の形式を確認してください。')
+        for key in ('id', 'instructionId'):
+            ledger_text(item[key], 100, '明細ID', key == 'id')
+        if item['id'] in seen: raise ValueError('明細のIDが重複しています。')
+        seen.add(item['id'])
+        for key, size in [('from', 100), ('to', 100), ('note', 200), ('jobLabel', 100), ('plannedStart', 50), ('plannedEnd', 50)]:
+            ledger_text(item[key], size, key)
+        if type(item['rollover']) is not bool or not isinstance(item['meter'], str) or (item['meter'] and not re.fullmatch(r'\d{1,3}', item['meter'])):
+            raise ValueError('メーターは下3桁を入力してください。')
+        if not isinstance(item['passengers'], str) or (item['passengers'] and not re.fullmatch(r'[1-9]\d?', item['passengers'])):
+            raise ValueError('乗車人数を確認してください。')
+        start = daily_time(item['startAt']) if item['startAt'] else None
+        end = daily_time(item['endAt']) if item['endAt'] else None
+        if not isinstance(item['startAt'], str) or not isinstance(item['endAt'], str): raise ValueError('実時刻を確認してください。')
+        if submitted and ((start and end and end < start) or (previous_time and start and start < previous_time)):
+            raise ValueError(f'{index}行目の実時刻の順序を確認してください。')
+        current_meter = int(item['meter']) if item['meter'] else None
+        if submitted:
+            if not start or not end or not item['from'].strip() or not item['to'].strip() or current_meter is None:
+                raise ValueError(f'{index}行目の実時刻・地点・メーターを入力してください。')
+            if item['kind'] == 'passenger' and not item['passengers']:
+                raise ValueError('実車の乗車人数を入力してください。')
+            if previous_meter is not None and current_meter < previous_meter and not item['rollover']:
+                raise ValueError('メーターの繰り上がりを確認してください。')
+        if start and end and end - start > timedelta(days=3): raise ValueError('1行の運行時間を確認してください。')
+        previous_time = end or previous_time
+        previous_meter = current_meter
+    if submitted and ((row['dutyStart'] and daily_time(row['dutyStart']) > daily_time(row['startAt'])) or (row['dutyEnd'] and previous_time > daily_time(row['dutyEnd']))):
+        raise ValueError('勤務時間と運行時刻の前後を確認してください。')
+
+
+def daily_report_api(handler, cur, conn, method, path):
+    query = parse_qs(urlsplit(handler.path).query)
+    if method == 'GET' and path == '/api/daily-reports/instructions':
+        day = ledger_date(query.get('date', [''])[0]); driver_id = int(query.get('driverId', ['0'])[0])
+        if not day or driver_id <= 0: raise ValueError('乗務員と運行日を確認してください。')
+        cur.execute('''SELECT d.value FROM transport_documents d WHERE d.service_date=%s
+            AND d.value->>'kind'='instruction' AND d.value->>'voided'='false' AND d.value->>'driverId'=%s
+            AND NOT EXISTS(SELECT 1 FROM transport_documents n WHERE n.supersedes=d.id)
+            ORDER BY d.value->'values'->>'boardingAt',d.id LIMIT 1001''', (day, str(driver_id)))
+        records = [item[0] for item in cur.fetchall()]
+        if len(records)>1000: raise ValueError('担当指示書が多すぎます。日付を確認してください。')
+        handler.send(200, {'records': records}); return
+    if path != '/api/daily-reports' or method not in ('GET', 'POST'):
+        handler.send(404, {'error': '見つかりません。'}); return
+    if method == 'GET':
+        report_id = query.get('reportId', [''])[0]
+        if report_id:
+            ledger_text(report_id,100,'日報ID',True)
+            cur.execute('SELECT value FROM daily_reports WHERE report_id=%s ORDER BY version DESC LIMIT 1001', (report_id,))
+            records=[item[0] for item in cur.fetchall()]
+            if len(records)>1000: raise ValueError('履歴が多いため管理担当へ抽出を依頼してください。')
+            handler.send(200, {'records':records}); return
+        day = ledger_date(query.get('date', [''])[0]); driver_id = int(query.get('driverId', ['0'])[0])
+        if not day or driver_id <= 0: raise ValueError('乗務員と運行日を確認してください。')
+        cur.execute('SELECT value FROM daily_reports WHERE service_date=%s AND driver_id=%s ORDER BY version DESC LIMIT 1', (day,driver_id))
+        found=cur.fetchone(); handler.send(200, {'record':found[0] if found else None}); return
+    row=json.loads(handler.body(1024*1024))
+    if not isinstance(row,dict): raise ValueError('日報の形式を確認してください。')
+    ledger_text(row.get('id'),100,'記録ID',True)
+    ledger_text(row.get('date'),10,'運行日',True)
+    if type(row.get('driverId')) is not int: raise ValueError('乗務員を確認してください。')
+    # Serialize all saves for one driver's day, including initial requests from two devices.
+    cur.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('daily:'+row['date']+':'+str(row['driverId']),))
+    cur.execute('SELECT value FROM daily_reports WHERE id=%s', (row['id'],)); found=cur.fetchone()
+    if found:
+        if found[0]!=row: raise ValueError('同じ保存IDで違う内容は保存できません。')
+        handler.send(200, {'record':found[0]}); return
+    cur.execute('SELECT value FROM daily_reports WHERE service_date=%s AND driver_id=%s ORDER BY version DESC LIMIT 1', (row['date'],row['driverId']))
+    found=cur.fetchone(); original=found[0] if found else None
+    if original and (row.get('reportId')!=original['reportId'] or row.get('version')!=original['version']+1):
+        handler.send(409, {'error':'別の端末で日報が更新されています。入力を控えて最新の日報を開いてください。'}); return
+    cur.execute('SELECT value FROM workspace WHERE id=1 FOR SHARE'); workspace=cur.fetchone()[0] or {}
+    validate_daily_report(row,workspace,original)
+    old_links = {item['id']:item for item in original['rows']} if original else {}
+    for item in row['rows']:
+        if not item['instructionId']: continue
+        old=old_links.get(item['id'])
+        if old and all(old[key]==item[key] for key in ('instructionId','plannedStart','plannedEnd')): continue
+        cur.execute('''SELECT d.value FROM transport_documents d WHERE d.id=%s
+            AND NOT EXISTS(SELECT 1 FROM transport_documents n WHERE n.supersedes=d.id)''', (item['instructionId'],))
+        found=cur.fetchone(); doc=found[0] if found else None
+        if not doc or doc['kind']!='instruction' or doc['voided'] or doc.get('driverId')!=row['driverId'] or doc.get('vehicleId')!=row['vehicleId']:
+            raise ValueError('この乗務員・車両の最新の運行指示書を選んでください。')
+        if item['plannedStart']!=doc['values']['boardingAt'] or item['plannedEnd']!=doc['values']['alightingAt']:
+            raise ValueError('指示書の予定日時を確認してください。')
+    cur.execute('INSERT INTO daily_reports(id,report_id,version,service_date,driver_id,value) VALUES(%s,%s,%s,%s,%s,%s)', (row['id'],row['reportId'],row['version'],row['date'],row['driverId'],Json(row)))
+    conn.commit(); handler.send(201, {'record':row})
+
+
 def validate(value):
     if not isinstance(value, dict) or not ALLOWED.issubset(value) or set(value) - ALLOWED - {'dutyLogs', 'staffMembers', *INSPECTION_COLLECTIONS}:
         raise ValueError('保存データの形式が正しくありません。')
@@ -886,6 +1035,8 @@ class Handler(BaseHTTPRequestHandler):
                         cur.execute('DELETE FROM sessions WHERE token=%s', (hashlib.sha256(token.encode()).hexdigest(),))
                         conn.commit()
                         self.send(200, {'ok': True}, headers={'Set-Cookie': 'hire_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0'})
+                    elif path.startswith('/api/daily-reports'):
+                        daily_report_api(self, cur, conn, method, path)
                     elif path.startswith('/api/transport-documents'):
                         transport_api(self, cur, conn, method, path)
                     elif path == '/api/workspace' and method == 'GET':

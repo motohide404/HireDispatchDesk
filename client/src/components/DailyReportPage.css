@@ -1,0 +1,54 @@
+.daily-page { max-width: 1000px; margin: auto; padding: 20px 16px 100px; font-size: 16px; }
+.daily-page h2 { font-size: 22px; font-weight: 700; }
+.daily-page h3 { font-size: 18px; font-weight: 700; }
+.daily-page p { margin: 8px 0; }
+.daily-page label { display: block; font-size: 14px; }
+.daily-page input, .daily-page select, .daily-page textarea { display: block; width: 100%; min-height: 46px; border: 1px solid #a5b3bf; border-radius: 7px; padding: 9px; font-size: 16px; background: white; color: #142d3b; }
+.daily-page input[type=checkbox] { display: inline-block; width: 24px; min-height: 24px; vertical-align: middle; margin-right: 6px; }
+.daily-page button { min-height: 46px; padding: 9px 15px; border: 1px solid #9baebb; border-radius: 8px; background: white; font-size: 16px; }
+.daily-page button:disabled { opacity: .5; }
+.daily-page .daily-primary { background: #193749; color: white; }
+.daily-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.daily-wide { grid-column: 1 / -1; }
+.daily-card { padding: 16px; margin: 16px 0; border: 1px solid #c1cbd2; border-radius: 12px; background: white; }
+.daily-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.daily-row-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.daily-message { padding: 12px; background: #e4f3eb; border-radius: 8px; overflow-wrap: anywhere; }
+.daily-error { background: #fff0ed; color: #962c24; }
+.daily-muted { font-size: 14px; color: #526471; }
+.daily-savebar { position: sticky; bottom: 0; padding: 12px; background: #f1f5f9f5; border-top: 1px solid #b4c0c9; z-index: 5; }
+.daily-print-preview { overflow: auto; background: #e1e7eb; padding: 12px; }
+.daily-paper { width: 190mm; min-height: 265mm; margin: 10px auto; background: white; color: #142d3b; padding: 0; font: 8pt/1.35 'Hiragino Kaku Gothic ProN','Yu Gothic',Meiryo,sans-serif; }
+.daily-paper * { box-sizing: border-box; }
+.daily-paper header { display: flex; justify-content: space-between; align-items: center; padding: 3mm 0; }
+.daily-paper h1 { font-size: 18pt; font-weight: 700; margin: 0; }
+.daily-paper header span { font-size: 8pt; }
+.daily-paper h2 { background: #193749; color: white; font-size: 9pt; font-weight: 700; padding: 1mm 2mm; margin: 2mm 0 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.daily-paper-grid,.daily-paper-totals { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); border-top: 1px solid #9baebb; border-left: 1px solid #9baebb; }
+.daily-paper-totals { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.daily-paper p { margin: 0; }
+.daily-paper-grid p,.daily-paper-totals p { border-right: 1px solid #9baebb; border-bottom: 1px solid #9baebb; padding: 1mm 2mm; font-size: 7pt; overflow-wrap: anywhere; }
+.daily-paper b { display: block; font-size: 9pt; font-weight: 500; min-height: 4mm; }
+.daily-paper table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 7.5pt; }
+.daily-paper th,.daily-paper td { border: 1px solid #9baebb; padding: .8mm 1mm; overflow-wrap: anywhere; white-space: pre-wrap; }
+.daily-paper th { font-size: 7pt; background: #e9eef1; height: 8mm; }
+.daily-paper td { height: 8.5mm; }
+.daily-paper small { display: block; font-size: 7pt; }
+.daily-paper-hint { font-size: 7pt; padding: 1.5mm 0; }
+.daily-paper-notes { min-height: 12mm; padding: 2mm; border: 1px solid #9baebb; white-space: pre-wrap; overflow-wrap: anywhere; }
+.daily-paper footer { font-size: 6.5pt; padding-top: 2mm; overflow-wrap: anywhere; }
+@media (max-width: 540px) { .daily-grid { grid-template-columns: 1fr; } .daily-page { padding: 14px 12px 30px; } .daily-card { padding: 12px; } }
+@media print {
+ @page { size: A4 portrait; margin: 10mm; }
+ html,body { margin:0!important; padding:0!important; background:white!important; }
+ body:has(#daily-report-print) > *:not(#daily-report-print) { display:none!important; }
+ #daily-report-print { display:block!important; }
+ .daily-paper { width:190mm; height:270mm; min-height:0; margin:0; break-after:page; overflow:visible; }
+ .daily-paper:last-child { break-after:auto; }
+ .daily-paper-content { transform-origin:top left; }
+}
+#daily-report-print { position:fixed; inset:0; z-index:100; overflow:auto; background:#e1e7eb; padding:20px; }
+.daily-print-controls { display:flex; justify-content:center; gap:16px; padding:12px; }
+.daily-print-controls button { background:white; border:1px solid #9baebb; border-radius:8px; padding:12px; font-size:16px; }
+@media print { #daily-report-print { position:static!important; overflow:visible!important; background:white!important; padding:0!important; } .daily-print-controls { display:none!important; } }
+.daily-page fieldset { min-width:0; border:0; padding:0; margin:0; }
