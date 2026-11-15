@@ -354,6 +354,9 @@ def main():
                                 **{'from':'乗車地','to':'降車地'},meter='025',rollover=False,passengers='2',note='',
                                 instructionId=instruction_id,jobLabel=source_job['title'],
                                 plannedStart=instruction['values']['boardingAt'],plannedEnd=instruction['values']['alightingAt'])]}
+        call('/api/daily-reports', submitted, method='POST', expected=400)
+        submitted.update(dutyStart=day+'T07:50', dutyEnd=day+'T10:30')
+        call('/api/daily-reports', {**submitted, 'dutyStart':''}, method='POST', expected=400)
         call('/api/daily-reports', submitted, method='POST', expected=201)
         stale={**submitted,'id':duty_id+'-daily-stale'}
         call('/api/daily-reports', stale, method='POST', expected=409)

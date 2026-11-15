@@ -25,7 +25,7 @@ function DutyEndInput({ day, value, reference, onChange, onValidityChange }: { d
   const focused = useRef(false);
   const valid = !text.trim() || !!dutyEndTime(day, text, reference);
   useEffect(() => { if (!focused.current) setText(value.slice(11,16)); }, [value]);
-  return <label>勤務終了（任意）<input aria-label="勤務終了（任意）" type="text" placeholder="例：01:30 または 25:30" maxLength={5} value={text} aria-invalid={!valid}
+  return <label>勤務終了（必須）<input aria-label="勤務終了（必須）" required type="text" maxLength={5} value={text} aria-invalid={!valid}
     onFocus={()=>{focused.current=true;}}
     onChange={e=>{const next=e.target.value;setText(next);const parsed=dutyEndTime(day,next,reference);onValidityChange(!next.trim() || !!parsed);onChange(parsed);}}
     onBlur={()=>{focused.current=false;if(valid && value)setText(value.slice(11,16));}} />
@@ -127,7 +127,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
       <div className="daily-grid">
         {field('営業所',<select value={draft.office} onChange={e=>change({office:e.target.value})}><option value="">選択してください</option>{officeOptions.map(name=><option key={name} value={name}>{name}</option>)}</select>)}
         {field('出庫地点',<input maxLength={100} value={draft.startPlace} onChange={e=>change({startPlace:e.target.value})} />)}
-        {field('勤務開始（任意）',<input aria-label="勤務開始（任意）" type="time" step="60" value={draft.dutyStart.slice(11,16)} onChange={e=>{
+        {field('勤務開始（必須）',<input aria-label="勤務開始（必須）" required type="time" step="60" value={draft.dutyStart.slice(11,16)} onChange={e=>{
           const dutyStart=timeOnDay(draft.date,e.target.value);
           change({dutyStart, dutyEnd:draft.dutyEnd ? dutyEndTime(draft.date,draft.dutyEnd.slice(11,16),dutyStart || draft.startAt) : ''});
         }} />)}
@@ -146,7 +146,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
       {draft.rows.map((row,index)=><div className="daily-card" key={row.id}><div className="daily-row-heading"><h3>記録 {index+1}　{activityNames[row.kind]}</h3><div className="daily-actions">
         <button aria-label={`記録${index+1}を上へ`} disabled={index===0} onClick={()=>{const rows=[...draft.rows];[rows[index-1],rows[index]]=[rows[index],rows[index-1]];change({rows});}}>↑</button>
         <button aria-label={`記録${index+1}を下へ`} disabled={index===draft.rows.length-1} onClick={()=>{const rows=[...draft.rows];[rows[index+1],rows[index]]=[rows[index],rows[index+1]];change({rows});}}>↓</button>
-        <button onClick={()=>{if (window.confirm('この記録を入力欄から取り除きますか？保存済みの過去の版は残ります。')) change({rows:draft.rows.filter(r=>r.id!==row.id)});}}>削除</button>
+        <button onClick={()=>{if (window.confirm('この記録を入力欄から削除しますか？')) change({rows:draft.rows.filter(r=>r.id!==row.id)});}}>削除</button>
       </div></div>
         <div className="daily-grid">{field('区分',<select value={row.kind} onChange={e=>changeRow(row.id,{kind:e.target.value as Activity})}>{Object.entries(activityNames).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>)}
           {field('仕事',<input maxLength={100} value={row.jobLabel} onChange={e=>changeRow(row.id,{jobLabel:e.target.value})} />)}
