@@ -52,3 +52,6 @@
 .daily-print-controls button { background:white; border:1px solid #9baebb; border-radius:8px; padding:12px; font-size:16px; }
 @media print { #daily-report-print { position:static!important; overflow:visible!important; background:white!important; padding:0!important; } .daily-print-controls { display:none!important; } }
 .daily-page fieldset { min-width:0; border:0; padding:0; margin:0; }
+
+.daily-time-field { display:grid; grid-template-columns:minmax(0,1fr) 88px; align-items:end; gap:8px; }
+.daily-time-field > button { grid-column:1 / -1; }
