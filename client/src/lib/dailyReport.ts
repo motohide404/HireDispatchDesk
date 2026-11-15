@@ -39,6 +39,18 @@ export function timeOnDay(day: string, time: string, offset = 0) {
   calendar.setUTCDate(calendar.getUTCDate() + offset);
   return calendar.toISOString().slice(0,10) + 'T' + time;
 }
+// Short clocks follow the reference chronologically; 24:00–47:59 explicitly name the next day.
+export function dutyEndTime(day: string, input: string, reference = '') {
+  const clock = input.trim().replace(/[０-９]/g, n => String(n.charCodeAt(0) - 0xff10)).replace(/：/g, ':');
+  const match = /^(\d{1,2}):(\d{2})$/.exec(clock);
+  if (!match || Number(match[1]) > 47 || Number(match[2]) > 59) return '';
+  const hour = Number(match[1]);
+  const time = String(hour % 24).padStart(2, '0') + ':' + match[2];
+  if (hour >= 24) return timeOnDay(day, time, 1);
+  const offset = reference ? dayOffset(day, reference.slice(0,10)) : 0;
+  const value = timeOnDay(day, time, offset);
+  return reference && value < reference ? timeOnDay(day, time, offset + 1) : value;
+}
 export function localDateTime(value: string) { return value ? localTime(value.length === 16 ? isoTime(value) : value).slice(0, 16) : ''; }
 export function minuteLabel(value: string, day: string) { if (!value) return ''; const local = localTime(value.length === 16 ? isoTime(value) : value); return (local.slice(0, 10) !== day ? local.slice(5, 10) + ' ' : '') + local.slice(11, 16); }
 export function minutes(start: string, end: string) { const n = (Date.parse(isoTime(end)) - Date.parse(isoTime(start))) / 60000; return Number.isFinite(n) && n >= 0 ? n : null; }
