@@ -70,7 +70,7 @@ test('mobile driver records overnight trip, recovers draft, retries lost respons
   await expect(page.getByLabel('開始の実時刻',{exact:true})).toHaveValue('');
   await page.getByLabel('開始の実時刻',{exact:true}).fill('23:40');
   await page.getByLabel('終了の実時刻',{exact:true}).fill('01:00');
-  await page.getByRole('combobox',{name:'終了の実時刻の日付',exact:true}).selectOption('1');
+  await expect(page.getByRole('combobox',{name:/実時刻の日付/})).toHaveCount(0);
   await page.getByLabel('終了時メーター下3桁',{exact:true}).fill('025');
   await page.getByLabel('乗車人数',{exact:true}).fill('2');
   await expect(page.getByText(/走行 35 km/)).toBeVisible();
@@ -108,9 +108,10 @@ test('mobile driver records overnight trip, recovers draft, retries lost respons
   expect(state.records[1].dutyEnd).toBe('2030-01-02T01:30');
   expect(state.records[2].rows[0].instructionId).toBe('inst-1');
   await page.getByRole('button',{name:'＋回送',exact:true}).click();
-  await expect(page.getByRole('combobox',{name:'開始の実時刻の日付',exact:true}).nth(1)).toHaveValue('1');
+  await expect(page.getByRole('combobox',{name:/実時刻の日付/})).toHaveCount(0);
   await page.getByLabel('開始の実時刻',{exact:true}).nth(1).fill('01:10');
-  await expect(page.getByRole('combobox',{name:'終了の実時刻の日付',exact:true}).nth(1)).toHaveValue('1');
+  await page.getByLabel('終了の実時刻',{exact:true}).nth(1).fill('25:20');
+  expect(await page.evaluate(()=>Object.keys(localStorage).filter(k=>k.startsWith('hire-daily-draft:')).map(k=>JSON.parse(localStorage.getItem(k)!))[0].rows[1])).toMatchObject({startAt:'2030-01-02T01:10',endAt:'2030-01-02T01:20'});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
   mkdirSync('../.private/daily-report-20261115',{recursive:true});
   await page.screenshot({path:'../.private/daily-time-input-20261115/mobile.png',fullPage:true});

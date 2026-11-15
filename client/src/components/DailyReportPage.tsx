@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { DriverLedgerEntry } from '../data/drivers';
 import type { VehicleLedgerVehicle } from '../data/vehicles';
 import { todayInJapan } from '../lib/ledger';
-import { activityNames, dutyEndTime, dayOffset, timeOnDay, dailyRequest, instructionRow, localDateTime, meterSummary, minutes, newDailyRow, reportError, uuid, type Activity, type DailyReport, type DailyRow } from '../lib/dailyReport';
+import { activityNames, dutyEndTime, timeOnDay, dailyRequest, instructionRow, localDateTime, meterSummary, minutes, newDailyRow, reportError, uuid, type Activity, type DailyReport, type DailyRow } from '../lib/dailyReport';
 import { usePersistentState } from '../lib/store';
 import { emptyStaff, type StaffMember } from '../lib/staff';
 import type { TransportDocument } from '../lib/transportDocuments';
@@ -11,21 +11,12 @@ import DailyReportSheet from './DailyReportSheet';
 import './DailyReportPage.css';
 const cacheKey = (day: string, driver: number) => `hire-daily-draft:${day}:${driver}`;
 const field = (label: string, input: ReactNode, wide = false) => <label className={wide ? 'daily-wide' : ''}>{label}{input}</label>;
-function DailyTimeInput({ label, day, value, onChange, defaultDay = 0 }: { label: string; day: string; value: string; onChange: (value: string) => void; defaultDay?: number }) {
-  const [chosenDay, setChosenDay] = useState<number | null>(null);
-  const offset = value ? dayOffset(day, value.slice(0, 10)) : chosenDay ?? defaultDay;
-  const days = Array.from(new Set([-1, 0, 1, 2, 3, offset])).sort((a,b)=>a-b);
-  return <div className="daily-time-field"><label>{label}<input aria-label={label} type="time" step="60" value={value.slice(11,16)} onChange={e=>onChange(timeOnDay(day,e.target.value,offset))} /></label>
-    <select aria-label={`${label}の日付`} value={offset} onChange={e=>{ const next=Number(e.target.value);setChosenDay(next);if(value)onChange(timeOnDay(day,value.slice(11,16),next)); }}>{days.map(n=><option key={n} value={n}>{n===-1?'前日':n===0?'当日':n===1?'翌日':n===2?'翌々日':`${n}日後`}</option>)}</select>
-  </div>;
-}
-
-function DutyEndInput({ day, value, reference, onChange, onValidityChange }: { day: string; value: string; reference: string; onChange: (value: string) => void; onValidityChange: (valid: boolean) => void }) {
+function ClockInput({ label, required = false, day, value, reference, onChange, onValidityChange }: { label: string; required?: boolean; day: string; value: string; reference: string; onChange: (value: string) => void; onValidityChange: (valid: boolean) => void }) {
   const [text, setText] = useState(value.slice(11,16));
   const focused = useRef(false);
   const valid = !text.trim() || !!dutyEndTime(day, text, reference);
   useEffect(() => { if (!focused.current) setText(value.slice(11,16)); }, [value]);
-  return <label>勤務終了（必須）<input aria-label="勤務終了（必須）" required type="text" maxLength={5} value={text} aria-invalid={!valid}
+  return <label>{label}<input aria-label={label} required={required} type="text" maxLength={5} value={text} aria-invalid={!valid}
     onFocus={()=>{focused.current=true;}}
     onChange={e=>{const next=e.target.value;setText(next);const parsed=dutyEndTime(day,next,reference);onValidityChange(!next.trim() || !!parsed);onChange(parsed);}}
     onBlur={()=>{focused.current=false;if(valid && value)setText(value.slice(11,16));}} />
@@ -37,6 +28,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
   const [staff] = usePersistentState<StaffMember[]>('staffMembers', emptyStaff);
   const [profileOffice, setProfileOffice] = useState('');
   const [opened, setOpened] = useState(0);
+  const [rowTimeValidity, setRowTimeValidity] = useState<Record<string, boolean>>({});
   const [dutyEndValid, setDutyEndValid] = useState(true);
   const [date, setDate] = useState(todayInJapan);
   const [driverId, setDriverId] = useState('');
@@ -70,7 +62,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
         dailyRequest(`?date=${date}&driverId=${driverId}`), dailyRequest(`/instructions?date=${date}&driverId=${driverId}`),
         fetch('/api/transport-documents/settings', { credentials: 'same-origin' }).then(async r => { if (!r.ok) throw new Error('営業所の設定を取得できません。'); return r.json(); })
       ]);
-      setProfileOffice(settings.profile?.officeName ?? ''); setDutyEndValid(true); setOpened(n=>n+1);
+      setProfileOffice(settings.profile?.officeName ?? ''); setDutyEndValid(true); setOpened(n=>n+1); setRowTimeValidity({});
       const original: DailyReport | null = result.record;
       const driver = drivers.find(d => d.id === Number(driverId))!;
       const vehicle = original ? { id: original.vehicleId, plateNo: original.vehiclePlate } : vehicles.find(v => v.id === Number(vehicleId));
@@ -88,7 +80,15 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
     finally { setBusy(false); }
   }
   function change(patch: Partial<DailyReport>) { if (!draft) return; pending.current = null; setError(''); setNotice(''); setDraft({ ...draft, ...patch }); }
-  function changeRow(id: string, patch: Partial<DailyRow>) { if (draft) change({ rows: draft.rows.map(row => row.id === id ? { ...row, ...patch } : row) }); }
+  function changeRow(id: string, patch: Partial<DailyRow>) {
+    if (!draft) return;
+    change({ rows: draft.rows.map(row => {
+      if (row.id !== id) return row;
+      const next = { ...row, ...patch };
+      if ('startAt' in patch && next.startAt && next.endAt) next.endAt = dutyEndTime(draft.date, next.endAt.slice(11,16), next.startAt);
+      return next;
+    }) });
+  }
   function add(kind: Activity) {
     if (!draft) return;
     const last = draft.rows[draft.rows.length - 1];
@@ -96,6 +96,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
   }
   async function save(status: 'draft' | 'submitted') {
     if (!draft || lock.current) return;
+    if (draft.rows.some(row=>rowTimeValidity[row.id+'-start']===false || rowTimeValidity[row.id+'-end']===false)) { setError('運行明細の時刻を確認してください。'); return; }
     if (!dutyEndValid) { setError('勤務終了の時刻を確認してください。'); return; }
     const issue = reportError(draft, status === 'submitted');
     if (issue) { setError(issue); return; }
@@ -131,11 +132,11 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
           const dutyStart=timeOnDay(draft.date,e.target.value);
           change({dutyStart, dutyEnd:draft.dutyEnd ? dutyEndTime(draft.date,draft.dutyEnd.slice(11,16),dutyStart || draft.startAt) : ''});
         }} />)}
-        <DutyEndInput key={`${draft.reportId}-${opened}-dutyEnd`} day={draft.date} value={draft.dutyEnd} reference={draft.dutyStart || draft.startAt || draft.rows[draft.rows.length-1]?.endAt || ''} onValidityChange={setDutyEndValid} onChange={value=>change({dutyEnd:value})} />
+        <ClockInput label="勤務終了（必須）" required key={`${draft.reportId}-${opened}-dutyEnd`} day={draft.date} value={draft.dutyEnd} reference={draft.dutyStart || draft.startAt || draft.rows[draft.rows.length-1]?.endAt || ''} onValidityChange={setDutyEndValid} onChange={value=>change({dutyEnd:value})} />
         <p className="daily-wide daily-muted">勤務終了は01:30・25:30のどちらでも入力できます。開始より早い時刻は翌日として扱います。</p>
       </div></div>
-      <div className="daily-card"><h3>開始時の記録</h3><p className="daily-muted">時刻だけを入力してください。日をまたぐときは「翌日」を選びます。</p><p className="daily-muted">以降はメーター下3桁だけを入力します。1区間が1000km以上になる場合は中間地点の記録を追加してください。</p><div className="daily-grid">
-        <DailyTimeInput key={`${draft.reportId}-startAt`} label="出庫の実時刻" day={draft.date} value={draft.startAt} onChange={value=>change({startAt:value})} />
+      <div className="daily-card"><h3>開始時の記録</h3><p className="daily-muted">時刻だけを入力してください。運行明細の日またぎは前の時刻から自動で判断します。</p><p className="daily-muted">以降はメーター下3桁だけを入力します。1区間が1000km以上になる場合は中間地点の記録を追加してください。</p><div className="daily-grid">
+        {field('出庫の実時刻',<input aria-label="出庫の実時刻" type="time" step="60" value={draft.startAt.slice(11,16)} onChange={e=>change({startAt:timeOnDay(draft.date,e.target.value)})} />)}
         {field('出庫メーター（積算km・最初だけ全桁）',<input inputMode="numeric" pattern="[0-9]*" maxLength={7} placeholder="例：12500" value={draft.startOdometer} onChange={e=>change({startOdometer:e.target.value})} />)}
         <p>開始時の下3桁：<strong>{draft.startOdometer ? String(Number(draft.startOdometer)%1000).padStart(3,'0') : '未入力'}</strong></p>
       </div></div>
@@ -153,8 +154,8 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
           {row.instructionId && <p className="daily-wide daily-muted">指示書参照：{row.instructionId} / 予定 {localDateTime(row.plannedStart)} → {localDateTime(row.plannedEnd)}</p>}
           {field('開始地点',<input maxLength={100} value={row.from} onChange={e=>changeRow(row.id,{from:e.target.value})} />)}
           {field('終了地点・休憩場所',<input maxLength={100} value={row.to} onChange={e=>changeRow(row.id,{to:e.target.value})} />)}
-          <DailyTimeInput label="開始の実時刻" day={draft.date} value={row.startAt} defaultDay={dayOffset(draft.date, (draft.rows[index-1]?.endAt || draft.startAt || draft.date).slice(0,10))} onChange={value=>changeRow(row.id,{startAt:value})} />
-          <DailyTimeInput label="終了の実時刻" day={draft.date} value={row.endAt} defaultDay={dayOffset(draft.date,(row.startAt || draft.rows[index-1]?.endAt || draft.startAt || draft.date).slice(0,10))} onChange={value=>changeRow(row.id,{endAt:value})} />
+          <ClockInput key={`${opened}-${row.id}-start`} label="開始の実時刻" day={draft.date} value={row.startAt} reference={draft.rows[index-1]?.endAt || draft.rows[index-1]?.startAt || draft.startAt || draft.dutyStart || ''} onValidityChange={valid=>setRowTimeValidity(previous=>({...previous,[row.id+'-start']:valid}))} onChange={value=>changeRow(row.id,{startAt:value})} />
+          <ClockInput key={`${opened}-${row.id}-end`} label="終了の実時刻" day={draft.date} value={row.endAt} reference={row.startAt || draft.rows[index-1]?.endAt || draft.startAt || draft.dutyStart || ''} onValidityChange={valid=>setRowTimeValidity(previous=>({...previous,[row.id+'-end']:valid}))} onChange={value=>changeRow(row.id,{endAt:value})} />
           {field('終了時メーター下3桁',<input inputMode="numeric" pattern="[0-9]*" maxLength={3} placeholder="例：512" value={row.meter} onChange={e=>changeRow(row.id,{meter:e.target.value,rollover:false})} />)}
           <p>区間距離：<strong>{summary?.distances[index] ?? '未確定'}</strong> km</p>
           {row.kind==='passenger' && field('乗車人数',<input inputMode="numeric" maxLength={2} value={row.passengers} onChange={e=>changeRow(row.id,{passengers:e.target.value})}/>)}
