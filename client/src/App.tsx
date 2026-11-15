@@ -7,6 +7,7 @@ import PartnerLedgerPage from "./components/PartnerLedgerPage";
 import JobEntryPage from "./components/JobEntryPage";
 import DutyLogPage from "./components/DutyLogPage";
 import TransportDocumentsPage from "./components/TransportDocumentsPage";
+import DailyReportPage from "./components/DailyReportPage";
 import DailyInspectionPage from "./components/DailyInspectionPage";
 import StaffLedgerPage from "./components/StaffLedgerPage";
 import { createJobRow, hasJobInput, type JobEntryRow, type NewWorkJob } from "./lib/jobEntry";
@@ -19,7 +20,7 @@ import {
 } from "./data/drivers";
 import { createDispatchVehicles, vehicleLedger, vehicleMaintenanceRecords } from "./data/vehicles";
 
-type ActivePage = "dispatch" | "jobs" | "duties" | "staff" | "inspections" | "documents" | "vehicles" | "drivers" | "partners" | "invoices";
+type ActivePage = "daily" | "dispatch" | "jobs" | "duties" | "staff" | "inspections" | "documents" | "vehicles" | "drivers" | "partners" | "invoices";
 
 type NavItem = {
   key: ActivePage;
@@ -28,6 +29,7 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
+  { key: 'daily', label: '乗務日報', description: 'スマホ・タブレットから1日分の運行実績を記録します。' },
   { key: 'documents', label: '受書・運行指示書', description: '予約から受書と運行指示書を作成・保存・印刷します。' },
   { key: 'inspections', label: '日常点検', description: '乗用車の日常点検と整備管理者の確認を記録します。' },
   { key: 'duties', label: '点呼・出勤簿', description: '勤務ごとの出退勤と点呼を記録し、履歴を残します。' },
@@ -65,7 +67,8 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export default function App() {
-  const [activePage, setActivePage] = useState<ActivePage>("dispatch");
+  const driverView = new URLSearchParams(window.location.search).get("view") === "daily";
+  const [activePage, setActivePage] = useState<ActivePage>(() => new URLSearchParams(window.location.search).get("view") === "daily" ? "daily" : "dispatch");
   const [drivers, setDrivers] = usePersistentState("drivers", initialDriverLedger);
   const [vehicles, setVehicles] = usePersistentState("vehicles", vehicleLedger);
   const [partners] = usePersistentState<PartnerRecord[]>('partners', partnerLedger.partners);
@@ -201,7 +204,7 @@ export default function App() {
         onDateChange={setDispatchDate}
       />
     );
-  } else if (activePage === "jobs" || activePage === "duties" || activePage === "staff" || activePage === "inspections" || activePage === "documents") {
+  } else if (activePage === "daily" || activePage === "jobs" || activePage === "duties" || activePage === "staff" || activePage === "inspections" || activePage === "documents") {
     pageContent = <></>;
   } else if (activePage === "vehicles") {
     pageContent = (
@@ -248,7 +251,7 @@ export default function App() {
             <p className="text-xs text-slate-500">{activeDescription}</p>
           </div>
           <nav className="flex flex-wrap gap-2">
-            {NAV_ITEMS.map((item) => {
+            {NAV_ITEMS.filter(item => !driverView || item.key === 'daily').map((item) => {
               const isActive = item.key === activePage;
               return (
                 <button
@@ -270,6 +273,7 @@ export default function App() {
       </header>
       <main className="flex-1">
         {pageContent}
+        <div hidden={activePage !== 'daily'}><DailyReportPage drivers={drivers} vehicles={vehicles} /></div>
         <div hidden={activePage !== 'documents'}><TransportDocumentsPage drivers={drivers} vehicles={vehicles} /></div>
         <div hidden={activePage !== 'duties'}><DutyLogPage drivers={drivers} vehicles={vehicles} /></div>
         <div hidden={activePage !== 'inspections'}><DailyInspectionPage drivers={drivers} vehicles={vehicles} /></div>
