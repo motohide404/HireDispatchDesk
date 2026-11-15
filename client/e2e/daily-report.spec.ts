@@ -7,6 +7,8 @@ async function connect(page: Page) {
   let revision = 0;
   const records: any[] = [];
   let loseNext = false;
+  let resumeSubmission: (()=>void) | null = null;
+  let submissionGate: Promise<void> | null = null;
   const errors: string[] = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('dialog', dialog=>dialog.accept());
@@ -21,6 +23,7 @@ async function connect(page: Page) {
     if (url.pathname === '/api/daily-reports') {
       if (req.method() === 'POST') {
         const row = req.postDataJSON(), original = records.at(-1);
+        if(row.status==='submitted' && submissionGate){await submissionGate;submissionGate=null;}
         const validation = spawnSync('python3', ['-B','-c', "import sys,json;sys.path.insert(0,'../tests');from test_validation import app;x=json.load(sys.stdin);app.validate_daily_report(x['row'],x['workspace'],x['original'])"], { input: JSON.stringify({ row, workspace, original: original ?? null }), encoding: 'utf8', env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
         const existing=records.find(r=>r.id===row.id);
         if (!existing && validation.status !== 0) return route.fulfill({status:400,json:{error:validation.stderr}});
@@ -35,7 +38,7 @@ async function connect(page: Page) {
   });
   await page.goto('/?view=daily');
   await expect(page.getByRole('heading',{name:'乗務日報',exact:true})).toBeVisible();
-  return {records,errors,get workspace(){return workspace},loseResponse(){loseNext=true}};
+  return {records,errors,get workspace(){return workspace},loseResponse(){loseNext=true}, pauseSubmission(){submissionGate=new Promise<void>(resolve=>{resumeSubmission=resolve;});}, resumeSubmission(){resumeSubmission?.();}};
 }
 async function open(page: Page) {
   await page.getByLabel('運行日',{exact:true}).fill('2030-01-01');
@@ -97,13 +100,24 @@ test('mobile driver records overnight trip, recovers draft, retries lost respons
   await expect(page.getByRole('alert')).toHaveText('勤務開始・勤務終了を入力してください。');
   expect(state.records).toHaveLength(1);
   await page.getByLabel('勤務開始（必須）',{exact:true}).fill('23:00');
+  state.pauseSubmission();
   await page.getByRole('button',{name:'1日分を提出',exact:true}).click();
+  await expect(page.getByRole('button',{name:'提出中…',exact:true})).toBeDisabled();
+  await expect(page.locator('.daily-savebar')).toHaveAttribute('aria-busy','true');
+  await expect(page.locator('.daily-spinner')).toBeVisible();
+  state.resumeSubmission();
   await expect(page.getByText('日報を提出しました。')).toBeVisible();
+  await expect(page.getByRole('button',{name:'✓ 提出済み',exact:true})).toBeDisabled();
+  await expect(page.locator('.daily-savebar')).toHaveClass(/daily-savebar-submitted/);
+  await expect(page.locator('.daily-spinner')).toHaveCount(0);
   await page.getByLabel('事故・遅延・異常など（ある場合は概要と原因）',{exact:true}).fill('降車時刻の訂正');
+  await expect(page.getByRole('button',{name:'訂正して提出',exact:true})).toBeEnabled();
   await page.getByLabel('訂正理由',{exact:true}).fill('乗務員が実時刻を確認');
   await page.getByLabel('終了の実時刻',{exact:true}).fill('01:05');
   await page.getByRole('button',{name:'訂正して提出',exact:true}).click();
   await expect(page.getByText('日報を提出しました。')).toBeVisible();
+  await expect(page.getByRole('button',{name:'✓ 提出済み',exact:true})).toBeDisabled();
+  await expect(page.locator('.daily-savebar')).toHaveClass(/daily-savebar-submitted/);
   expect(state.records).toHaveLength(3);expect(state.records[1].rows[0].endAt).toBe('2030-01-02T01:00');
   expect(state.records[1].dutyEnd).toBe('2030-01-02T01:30');
   expect(state.records[2].rows[0].instructionId).toBe('inst-1');

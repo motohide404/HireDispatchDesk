@@ -40,6 +40,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [savingStatus, setSavingStatus] = useState<'draft' | 'submitted' | null>(null);
   const [print, setPrint] = useState<{ report: DailyReport; blank: boolean } | null>(null);
   const [preview, setPreview] = useState(false);
   const pending = useRef<DailyReport | null>(null);
@@ -102,18 +103,20 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
     if (issue) { setError(issue); return; }
     if (saved?.status === 'submitted' && !draft.reason.trim()) { setError('提出済み日報の訂正理由を入力してください。'); return; }
     if (pending.current && pending.current.status !== status) { setError('前回の保存を同じボタンで再試行してから、提出してください。'); return; }
-    lock.current = true; setBusy(true); setError(''); setNotice('');
+    lock.current = true; setSavingStatus(status); setBusy(true); setError(''); setNotice('');
     const row = pending.current ?? { ...draft, id: uuid(), version: (saved?.version ?? 0) + 1, status, savedAt: new Date().toISOString() };
     pending.current = row;
+    const feedbackDelay = status==='submitted' ? new Promise<void>(resolve=>window.setTimeout(resolve,1200)) : Promise.resolve();
     try {
-      const result = await dailyRequest('', row);
+      const [result] = await Promise.all([dailyRequest('', row), feedbackDelay]);
       setSaved(result.record); setDraft(result.record); pending.current = null;
       try { localStorage.removeItem(cacheKey(row.date,row.driverId)); } catch { /* Saved on server. */ }
       setNotice(row.status === 'submitted' ? '日報を提出しました。' : '下書きをサーバーに保存しました。');
-    } catch (cause) { setError((cause instanceof Error ? cause.message : '保存できません。') + ' 入力内容は画面に残っています。'); }
-    finally { lock.current = false; setBusy(false); }
+    } catch (cause) { await feedbackDelay; setError((cause instanceof Error ? cause.message : '保存できません。') + ' 入力内容は画面に残っています。'); }
+    finally { lock.current = false; setSavingStatus(null); setBusy(false); }
   }
   function preparePrint(blank: boolean) { if (draft) { setPrint({ report: draft, blank }); } }
+  const submitted = saved?.status === 'submitted' && !dirty;
   const officeOptions = Array.from(new Set([profileOffice, ...staff.filter(member=>member.active).map(member=>member.officeName), ...drivers.map(driver=>driver.officeId), draft?.office ?? ''].filter(name=>name.trim())));
   const summary = draft ? meterSummary(draft) : null;
   return <section className="daily-page"><h2>乗務日報</h2><p className="daily-muted">乗務員と運行日を選択して入力します。記録は必要なだけ追加できます。</p>
@@ -123,7 +126,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
       {field('車両（新規作成時）',<select value={vehicleId} onChange={e=>setVehicleId(e.target.value)}><option value="">選択してください</option>{vehicles.map(v=><option key={v.id} value={v.id}>{v.plateNo}</option>)}</select>)}
       <div className="daily-actions"><button disabled={!date || !driverId || busy} onClick={()=>void open()}>日報を開く</button></div>
     </div>
-    {error && <p role="alert" className="daily-message daily-error">{error}</p>}{notice && <p role="status" className="daily-message">{notice}</p>}
+    {error && !draft && <p role="alert" className="daily-message daily-error">{error}</p>}{notice && <p role="status" className="daily-message">{notice}</p>}
     {draft && <fieldset disabled={busy}><div className="daily-card"><h3>{draft.date} / {draft.driverName}</h3><p>{draft.vehiclePlate}　{saved ? `第${saved.version}版・${saved.status === 'submitted' ? '提出済み' : '下書き'}` : '新規'}</p>
       <div className="daily-grid">
         {field('営業所',<select value={draft.office} onChange={e=>change({office:e.target.value})}><option value="">選択してください</option>{officeOptions.map(name=><option key={name} value={name}>{name}</option>)}</select>)}
@@ -168,7 +171,11 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
         {field('事故・遅延・異常など（ある場合は概要と原因）',<textarea maxLength={2000} value={draft.notes} onChange={e=>change({notes:e.target.value})}/>)}
         {saved?.status==='submitted' && field('訂正理由',<input maxLength={500} value={draft.reason} onChange={e=>change({reason:e.target.value})}/>)}
       </div>
-      <div className="daily-savebar"><p className="daily-muted">{dirty ? '未保存の入力あり（端末にも下書きを保持）' : 'サーバー保存済み'}</p><div className="daily-actions"><button disabled={busy} onClick={()=>void save(saved?.status==='submitted' ? 'submitted' : 'draft')}>{saved?.status==='submitted' ? '訂正を保存' : '下書き保存'}</button><button className="daily-primary" disabled={busy} onClick={()=>void save('submitted')}>{saved?.status==='submitted' ? '訂正して提出' : '1日分を提出'}</button></div></div>
+      <div className={`daily-savebar${submitted ? ' daily-savebar-submitted' : ''}`} aria-busy={savingStatus!==null}>
+        {error && <p role="alert" className="daily-message daily-error">{error}</p>}
+        <p className={submitted ? 'daily-submitted-status' : 'daily-muted'} role="status" aria-live="polite">{savingStatus==='submitted' ? '提出中…' : savingStatus==='draft' ? '保存中…' : submitted ? `✓ 提出済み　${localDateTime(saved.savedAt).slice(11)}` : dirty ? '未保存の入力あり（端末にも下書きを保持）' : 'サーバー保存済み'}</p>
+        <div className="daily-actions"><button disabled={busy || submitted} onClick={()=>void save(saved?.status==='submitted' ? 'submitted' : 'draft')}>{saved?.status==='submitted' ? '訂正を保存' : '下書き保存'}</button><button className={`daily-primary${submitted ? ' daily-submit-complete' : ''}`} disabled={busy || submitted} onClick={()=>void save('submitted')}>{savingStatus==='submitted' ? <><span className="daily-spinner" aria-hidden="true" />提出中…</> : submitted ? '✓ 提出済み' : saved?.status==='submitted' ? '訂正して提出' : '1日分を提出'}</button></div>
+      </div>
       <div className="daily-actions"><button onClick={()=>setPreview(!preview)}>印刷プレビュー</button><button onClick={()=>preparePrint(false)}>日報を印刷</button><button onClick={()=>preparePrint(true)}>空欄メモ用紙を印刷</button><button disabled={!saved || busy} onClick={()=>{setBusy(true);dailyRequest(`?reportId=${encodeURIComponent(draft.reportId)}`).then(r=>setHistory(r.records)).catch(e=>setError(e.message)).finally(()=>setBusy(false));}}>保存履歴</button></div>
       {preview && <div className="daily-print-preview"><DailyReportSheet report={draft}/></div>}
       {history.length>0 && <div className="daily-card"><h3>保存履歴（過去の版は変更できません）</h3>{history.map(r=><p key={r.id}>第{r.version}版 / {r.status==='submitted'?'提出':'下書き'} / {localDateTime(r.savedAt)} / {r.reason}<button onClick={()=>setPrint({report:r,blank:false})}>この版を印刷</button></p>)}</div>}
