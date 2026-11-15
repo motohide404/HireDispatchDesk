@@ -86,6 +86,7 @@ test('tablet cards add freely; printing 19 and 37 rows continues at 18; blank me
   await page.getByRole('button',{name:'日報を印刷',exact:true}).click();
   await expect(page.locator('#daily-report-print .daily-paper')).toHaveCount(3);
   expect(await page.locator('#daily-report-print tbody tr').count()).toBe(54);
+  await expect(page.locator('#daily-report-print tbody tr').nth(1).locator('td').nth(5)).toHaveText('');
   await page.pdf({path:'../.private/daily-report-20261115/37-rows.pdf',format:'A4',preferCSSPageSize:true,printBackground:true});
   await expect(page.locator('#daily-report-print')).toHaveCount(0);
   await page.getByRole('button',{name:'空欄メモ用紙を印刷',exact:true}).click();
