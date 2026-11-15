@@ -817,7 +817,6 @@ def validate_daily_report(row, workspace, original=None):
     if submitted and (not row['startAt'] or not row['startOdometer'] or not row['startPlace'].strip() or not row['rows'] or row['startAt'][:10] != row['date']):
         raise ValueError('出庫の日時・地点・積算kmと運行明細を確認してください。')
     previous_time = daily_time(row['startAt']) if row['startAt'] else None
-    previous_meter = int(row['startOdometer']) % 1000 if row['startOdometer'] else None
     seen = set()
     for index, item in enumerate(row['rows'], 1):
         if not isinstance(item, dict) or set(item) != DAILY_ROW_FIELDS or item.get('kind') not in DAILY_KINDS:
@@ -843,11 +842,8 @@ def validate_daily_report(row, workspace, original=None):
                 raise ValueError(f'{index}行目の実時刻・地点・メーターを入力してください。')
             if item['kind'] == 'passenger' and not item['passengers']:
                 raise ValueError('実車の乗車人数を入力してください。')
-            if previous_meter is not None and current_meter < previous_meter and not item['rollover']:
-                raise ValueError('メーターの繰り上がりを確認してください。')
         if start and end and end - start > timedelta(days=3): raise ValueError('1行の運行時間を確認してください。')
         previous_time = end or previous_time
-        previous_meter = current_meter
     if submitted and ((row['dutyStart'] and daily_time(row['dutyStart']) > daily_time(row['startAt'])) or (row['dutyEnd'] and previous_time > daily_time(row['dutyEnd']))):
         raise ValueError('勤務時間と運行時刻の前後を確認してください。')
 

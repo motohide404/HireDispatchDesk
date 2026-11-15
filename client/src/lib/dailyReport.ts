@@ -12,7 +12,7 @@ export function meterSummary(report: Pick<DailyReport, 'startOdometer' | 'rows'>
   let total = 0, passenger = 0;
   const distances = report.rows.map(row => {
     const next = /^\d{1,3}$/.test(row.meter) ? Number(row.meter) : null;
-    const distance = previous === null || next === null || (next < previous && !row.rollover) ? null : (next - previous + 1000) % 1000;
+    const distance = previous === null || next === null ? null : (next - previous + 1000) % 1000;
     // An unknown segment makes the day's total unknown, even after a later reading.
     previous = next;
     if (distance !== null) { total += distance; if (row.kind === 'passenger') passenger += distance; }
@@ -55,7 +55,7 @@ export function reportError(report: DailyReport, submitted = false) {
     if (row.kind === 'passenger' && !/^[1-9]\d?$/.test(row.passengers)) return `${i + 1}行目の乗車人数を入力してください。`;
     previous = row.endAt;
   }
-  if (meterSummary(report).total === null) return 'メーター下3桁を確認してください。繰り上がりがある行は確認を選んでください。';
+  if (meterSummary(report).total === null) return 'メーター下3桁を入力してください。';
   if ((report.dutyStart && minutes(report.dutyStart, report.startAt) === null) || (report.dutyEnd && minutes(previous, report.dutyEnd) === null)) return '勤務開始・終了と運行時刻の順序を確認してください。';
   return '';
 }

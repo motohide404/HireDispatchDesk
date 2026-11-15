@@ -19,13 +19,15 @@ def report():
 class DailyReportTests(unittest.TestCase):
     def test_overnight_rollover_and_incomplete_draft(self):
         app.validate_daily_report(report(),workspace())
+        automatic=report();automatic['rows'][0]['rollover']=False
+        app.validate_daily_report(automatic,workspace())
         row=report();row.update(status='draft',startAt='',startOdometer='',rows=[],dutyStart='',dutyEnd='')
         app.validate_daily_report(row,workspace())
         row['status']='submitted'
         with self.assertRaises(ValueError):app.validate_daily_report(row,workspace())
 
-    def test_no_missing_meter_or_unconfirmed_rollover_on_submission(self):
-        for patch in ({'meter':''},{'meter':'1000'},{'meter':'-1'},{'meter':'25.0'},{'rollover':False},{'passengers':''},{'passengers':'0'},{'startAt':'2030-01-01T23:00'},{'endAt':'2030-01-01T22:00'},{'from':''}):
+    def test_no_missing_or_invalid_meter_on_submission(self):
+        for patch in ({'meter':''},{'meter':'1000'},{'meter':'-1'},{'meter':'25.0'},{'passengers':''},{'passengers':'0'},{'startAt':'2030-01-01T23:00'},{'endAt':'2030-01-01T22:00'},{'from':''}):
             row=report();row['rows'][0].update(patch)
             with self.subTest(patch=patch),self.assertRaises(ValueError):app.validate_daily_report(row,workspace())
 
