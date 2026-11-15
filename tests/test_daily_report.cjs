@@ -7,7 +7,7 @@ const {meterSummary,reportPages,reportError,instructionRow}=require('../client/s
 const row=(meter,rollover=false,kind='deadhead')=>({meter,rollover,kind});
 test('lower three digits produce interval, full ending and passenger distance across rollover',()=>{
  assert.deepEqual(meterSummary({startOdometer:'12990',rows:[row('005',true),row('025',false,'passenger')]}),{distances:[15,20],total:35,passenger:20,endOdometer:13025});
- assert.equal(meterSummary({startOdometer:'12990',rows:[row('005')]}).total,null);
+ assert.equal(meterSummary({startOdometer:'12990',rows:[row('005')]}).total,15);
  assert.equal(meterSummary({startOdometer:'12500',rows:[row(''),row('530')]}).total,null);
 });
 test('18 print rows include departure once; row 19 and row 37 continue without data loss',()=>{

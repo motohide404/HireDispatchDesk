@@ -58,7 +58,6 @@ test('mobile driver records overnight trip, recovers draft, retries lost respons
   await page.getByLabel('終了の実時刻',{exact:true}).fill('01:00');
   await page.getByRole('combobox',{name:'終了の実時刻の日付',exact:true}).selectOption('1');
   await page.getByLabel('終了時メーター下3桁',{exact:true}).fill('025');
-  await page.getByLabel('999→000をまたいだことを確認').check();
   await page.getByLabel('乗車人数',{exact:true}).fill('2');
   await expect(page.getByText(/走行 35 km/)).toBeVisible();
   await page.reload();await open(page);

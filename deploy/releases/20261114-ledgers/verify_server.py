@@ -351,7 +351,7 @@ def main():
         call('/api/daily-reports', edited, method='POST', expected=400)
         submitted={**copy.deepcopy(daily), 'id':duty_id+'-daily-v2', 'version':2, 'status':'submitted',
                    'rows':[dict(id='daily-line',kind='passenger',startAt=day+'T09:00',endAt=day+'T10:00',
-                                **{'from':'乗車地','to':'降車地'},meter='025',rollover=True,passengers='2',note='',
+                                **{'from':'乗車地','to':'降車地'},meter='025',rollover=False,passengers='2',note='',
                                 instructionId=instruction_id,jobLabel=source_job['title'],
                                 plannedStart=instruction['values']['boardingAt'],plannedEnd=instruction['values']['alightingAt'])]}
         call('/api/daily-reports', submitted, method='POST', expected=201)

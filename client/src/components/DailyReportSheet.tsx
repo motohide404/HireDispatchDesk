@@ -27,7 +27,7 @@ export default function DailyReportSheet({ report, blank = false }: { report: Da
         if ('start' in item) return <tr key={i}><td>{blank ? '' : minuteLabel(report.startAt, report.date)}</td><td>出庫</td><td /><td>{blank ? '開始時のメーター →' : report.startPlace}</td><td /><td>{blank ? '' : report.startOdometer ? String(Number(report.startOdometer)%1000).padStart(3,'0') : ''}</td><td>-</td></tr>;
         if (!('row' in item)) return <tr key={i}>{Array.from({length:7},(_,j)=><td key={j} />)}</tr>;
         const {row,distance}=item;
-        return <tr key={i}><td>{minuteLabel(row.startAt,report.date)}<br />{minuteLabel(row.endAt,report.date)}</td><td>{activityNames[row.kind]}</td><td>{row.jobLabel}</td><td>{row.from} → {row.to}{row.note && <small>{row.note}</small>}</td><td>{row.passengers}</td><td>{row.meter ? row.meter.padStart(3,'0') : ''}{row.rollover && ' ↻'}</td><td>{distance ?? '-'}{distance !== null && ' km'}</td></tr>;
+        return <tr key={i}><td>{minuteLabel(row.startAt,report.date)}<br />{minuteLabel(row.endAt,report.date)}</td><td>{activityNames[row.kind]}</td><td>{row.jobLabel}</td><td>{row.from} → {row.to}{row.note && <small>{row.note}</small>}</td><td>{row.passengers}</td><td>{row.meter ? row.meter.padStart(3,'0') : ''}</td><td>{distance ?? '-'}{distance !== null && ' km'}</td></tr>;
       })}</tbody></table>
       <p className="daily-paper-hint">先頭行に開始時の下3桁を記入。以降は直前の値との差で距離を計算。999→000は繰り上げ。</p>
       {index === pages.length-1 && <><h2>03　特記事項</h2><div className="daily-paper-notes">{blank ? '' : report.notes}</div></>}
