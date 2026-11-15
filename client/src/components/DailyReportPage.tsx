@@ -89,10 +89,10 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
       return next;
     }) });
   }
-  function add(kind: Activity) {
+  function add() {
     if (!draft) return;
     const last = draft.rows[draft.rows.length - 1];
-    change({ rows: [...draft.rows, newDailyRow(kind, last?.to || draft.startPlace)] });
+    change({ rows: [...draft.rows, newDailyRow('deadhead', last?.to || draft.startPlace)] });
   }
   async function save(status: 'draft' | 'submitted') {
     if (!draft || lock.current) return;
@@ -162,7 +162,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
           {field('経過地点・補足（ある場合）',<input maxLength={200} value={row.note} onChange={e=>changeRow(row.id,{note:e.target.value})}/>,true)}
         </div>
       </div>)}
-      <div className="daily-actions">{Object.entries(activityNames).map(([key,label])=><button key={key} onClick={()=>add(key as Activity)}>＋{label}</button>)}</div>
+      <div className="daily-actions"><button onClick={add}>追加</button></div>
       <div className="daily-card"><h3>1日のまとめ</h3><p>走行 {summary?.total ?? '未確定'} km / 実車 {summary?.passenger ?? '未確定'} km / 帰庫メーター {summary?.endOdometer ?? '未確定'} km</p>
         <p>休憩 {draft.rows.filter(r=>r.kind==='break').reduce((sum,r)=>sum+(minutes(r.startAt,r.endAt)??0),0)}分</p>
         {field('事故・遅延・異常など（ある場合は概要と原因）',<textarea maxLength={2000} value={draft.notes} onChange={e=>change({notes:e.target.value})}/>)}

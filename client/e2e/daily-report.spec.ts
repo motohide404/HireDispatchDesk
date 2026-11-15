@@ -107,7 +107,8 @@ test('mobile driver records overnight trip, recovers draft, retries lost respons
   expect(state.records).toHaveLength(3);expect(state.records[1].rows[0].endAt).toBe('2030-01-02T01:00');
   expect(state.records[1].dutyEnd).toBe('2030-01-02T01:30');
   expect(state.records[2].rows[0].instructionId).toBe('inst-1');
-  await page.getByRole('button',{name:'＋回送',exact:true}).click();
+  await expect(page.getByRole('button',{name:'追加',exact:true})).toHaveCount(1);
+  await page.getByRole('button',{name:'追加',exact:true}).click();
   await expect(page.getByRole('combobox',{name:/実時刻の日付/})).toHaveCount(0);
   await page.getByLabel('開始の実時刻',{exact:true}).nth(1).fill('01:10');
   await page.getByLabel('終了の実時刻',{exact:true}).nth(1).fill('25:20');
@@ -119,7 +120,7 @@ test('mobile driver records overnight trip, recovers draft, retries lost respons
 });
 test('tablet cards add freely; printing 19 and 37 rows continues at 18; blank memo is one A4 page',async({page})=>{
   await page.setViewportSize({width:768,height:1024});const state=await connect(page);await open(page);
-  for(let i=0;i<36;i++)await page.getByRole('button',{name:'＋回送',exact:true}).click();
+  for(let i=0;i<36;i++)await page.getByRole('button',{name:'追加',exact:true}).click();
   await expect(page.getByRole('heading',{name:'記録 36　回送',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'日報を印刷',exact:true}).click();
   await expect(page.locator('#daily-report-print .daily-paper')).toHaveCount(3);
