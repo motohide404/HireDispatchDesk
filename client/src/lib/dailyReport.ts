@@ -27,6 +27,18 @@ export function reportPages(rows: DailyRow[]) {
   for (let i = 17; i < rows.length; i += 18) pages.push({ start: false, rows: rows.slice(i, i + 18) });
   return pages;
 }
+// Use calendar arithmetic in UTC so the device's timezone cannot shift the selected service day.
+export function dayOffset(day: string, valueDay: string) {
+  const difference = (Date.parse(valueDay + 'T00:00:00Z') - Date.parse(day + 'T00:00:00Z')) / 86400000;
+  return Number.isFinite(difference) ? difference : 0;
+}
+export function timeOnDay(day: string, time: string, offset = 0) {
+  if (!time) return '';
+  if (!/^\d{2}:\d{2}$/.test(time) || !Number.isInteger(offset)) return '';
+  const calendar = new Date(day + 'T00:00:00Z');
+  calendar.setUTCDate(calendar.getUTCDate() + offset);
+  return calendar.toISOString().slice(0,10) + 'T' + time;
+}
 export function localDateTime(value: string) { return value ? localTime(value.length === 16 ? isoTime(value) : value).slice(0, 16) : ''; }
 export function minuteLabel(value: string, day: string) { if (!value) return ''; const local = localTime(value.length === 16 ? isoTime(value) : value); return (local.slice(0, 10) !== day ? local.slice(5, 10) + ' ' : '') + local.slice(11, 16); }
 export function minutes(start: string, end: string) { const n = (Date.parse(isoTime(end)) - Date.parse(isoTime(start))) / 60000; return Number.isFinite(n) && n >= 0 ? n : null; }

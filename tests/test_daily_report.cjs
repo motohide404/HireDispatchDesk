@@ -26,3 +26,12 @@ test('incomplete mobile notes can save as draft but cannot be submitted',()=>{
  const draft={driverId:1,vehicleId:1,rows:[],startOdometer:'',startAt:'',startPlace:''};
  assert.equal(reportError(draft), '');assert.ok(reportError(draft,true));
 });
+test('time-only entries reuse the service date across month, year and leap-day boundaries',()=>{
+ const {timeOnDay,dayOffset}=require('../client/src/lib/dailyReport.ts');
+ assert.equal(timeOnDay('2030-12-31','23:30'),'2030-12-31T23:30');
+ assert.equal(timeOnDay('2030-12-31','00:15',1),'2031-01-01T00:15');
+ assert.equal(timeOnDay('2028-02-28','01:00',1),'2028-02-29T01:00');
+ assert.equal(timeOnDay('2030-01-01','23:30',-1),'2029-12-31T23:30');
+ assert.equal(timeOnDay('2030-01-01','',1),'');
+ assert.equal(dayOffset('2030-12-31','2031-01-01'),1);
+});

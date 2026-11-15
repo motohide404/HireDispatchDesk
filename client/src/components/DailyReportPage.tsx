@@ -4,13 +4,23 @@ import type { DriverLedgerEntry } from '../data/drivers';
 import type { VehicleLedgerVehicle } from '../data/vehicles';
 import { todayInJapan } from '../lib/ledger';
 import { localTime } from '../lib/dutyLog';
-import { activityNames, dailyRequest, instructionRow, localDateTime, meterSummary, minutes, newDailyRow, reportError, uuid, type Activity, type DailyReport, type DailyRow } from '../lib/dailyReport';
+import { activityNames, dayOffset, timeOnDay, dailyRequest, instructionRow, localDateTime, meterSummary, minutes, newDailyRow, reportError, uuid, type Activity, type DailyReport, type DailyRow } from '../lib/dailyReport';
 import type { TransportDocument } from '../lib/transportDocuments';
 import DailyReportSheet from './DailyReportSheet';
 import './DailyReportPage.css';
 const cacheKey = (day: string, driver: number) => `hire-daily-draft:${day}:${driver}`;
 const field = (label: string, input: ReactNode, wide = false) => <label className={wide ? 'daily-wide' : ''}>{label}{input}</label>;
 const now = () => localTime(new Date().toISOString()).slice(0,16);
+function DailyTimeInput({ label, day, value, onChange, defaultDay = 0, currentButton = false }: { label: string; day: string; value: string; onChange: (value: string) => void; defaultDay?: number; currentButton?: boolean }) {
+  const [chosenDay, setChosenDay] = useState<number | null>(null);
+  const offset = value ? dayOffset(day, value.slice(0, 10)) : chosenDay ?? defaultDay;
+  const days = Array.from(new Set([-1, 0, 1, 2, 3, offset])).sort((a,b)=>a-b);
+  return <div className="daily-time-field"><label>{label}<input aria-label={label} type="time" step="60" value={value.slice(11,16)} onChange={e=>onChange(timeOnDay(day,e.target.value,offset))} /></label>
+    <select aria-label={`${label}の日付`} value={offset} onChange={e=>{ const next=Number(e.target.value);setChosenDay(next);if(value)onChange(timeOnDay(day,value.slice(11,16),next)); }}>{days.map(n=><option key={n} value={n}>{n===-1?'前日':n===0?'当日':n===1?'翌日':n===2?'翌々日':`${n}日後`}</option>)}</select>
+    {currentButton && <button onClick={()=>onChange(now())}>{label==='出庫の実時刻'?'出庫時刻':label==='開始の実時刻'?'開始':'終了'}を現在時刻にする</button>}
+  </div>;
+}
+
 export default function DailyReportPage({ drivers, vehicles }: { drivers: DriverLedgerEntry[]; vehicles: VehicleLedgerVehicle[] }) {
   const [date, setDate] = useState(todayInJapan);
   const [driverId, setDriverId] = useState('');
@@ -98,12 +108,11 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
       <div className="daily-grid">
         {field('営業所',<input maxLength={100} value={draft.office} onChange={e=>change({office:e.target.value})} />)}
         {field('出庫地点',<input maxLength={100} value={draft.startPlace} onChange={e=>change({startPlace:e.target.value})} />)}
-        {field('勤務開始（任意）',<input type="datetime-local" value={draft.dutyStart} onChange={e=>change({dutyStart:e.target.value})} />)}
-        {field('勤務終了（任意）',<input type="datetime-local" value={draft.dutyEnd} onChange={e=>change({dutyEnd:e.target.value})} />)}
+        <DailyTimeInput label="勤務開始（任意）" day={draft.date} value={draft.dutyStart} onChange={value=>change({dutyStart:value})} />
+        <DailyTimeInput label="勤務終了（任意）" day={draft.date} value={draft.dutyEnd} defaultDay={dayOffset(draft.date, draft.rows[draft.rows.length-1]?.endAt.slice(0,10) || draft.date)} onChange={value=>change({dutyEnd:value})} />
       </div></div>
-      <div className="daily-card"><h3>開始時の記録</h3><p className="daily-muted">以降はメーター下3桁だけを入力します。1区間が1000km以上になる場合は中間地点の記録を追加してください。</p><div className="daily-grid">
-        {field('出庫の実時刻',<input type="datetime-local" value={draft.startAt} onChange={e=>change({startAt:e.target.value})} />)}
-        <button onClick={()=>change({startAt:now()})}>出庫時刻を現在時刻にする</button>
+      <div className="daily-card"><h3>開始時の記録</h3><p className="daily-muted">時刻だけを入力してください。日をまたぐときは「翌日」を選びます。</p><p className="daily-muted">以降はメーター下3桁だけを入力します。1区間が1000km以上になる場合は中間地点の記録を追加してください。</p><div className="daily-grid">
+        <DailyTimeInput label="出庫の実時刻" day={draft.date} value={draft.startAt} onChange={value=>change({startAt:value})} currentButton />
         {field('出庫メーター（積算km・最初だけ全桁）',<input inputMode="numeric" pattern="[0-9]*" maxLength={7} placeholder="例：12500" value={draft.startOdometer} onChange={e=>change({startOdometer:e.target.value})} />)}
         <p>開始時の下3桁：<strong>{draft.startOdometer ? String(Number(draft.startOdometer)%1000).padStart(3,'0') : '未入力'}</strong></p>
       </div></div>
@@ -121,8 +130,8 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
           {row.instructionId && <p className="daily-wide daily-muted">指示書参照：{row.instructionId} / 予定 {localDateTime(row.plannedStart)} → {localDateTime(row.plannedEnd)}</p>}
           {field('開始地点',<input maxLength={100} value={row.from} onChange={e=>changeRow(row.id,{from:e.target.value})} />)}
           {field('終了地点・休憩場所',<input maxLength={100} value={row.to} onChange={e=>changeRow(row.id,{to:e.target.value})} />)}
-          {field('開始の実時刻',<><input type="datetime-local" value={row.startAt} onChange={e=>changeRow(row.id,{startAt:e.target.value})}/><button onClick={()=>changeRow(row.id,{startAt:now()})}>開始を現在時刻にする</button></>)}
-          {field('終了の実時刻',<><input type="datetime-local" value={row.endAt} onChange={e=>changeRow(row.id,{endAt:e.target.value})}/><button onClick={()=>changeRow(row.id,{endAt:now()})}>終了を現在時刻にする</button></>)}
+          <DailyTimeInput label="開始の実時刻" day={draft.date} value={row.startAt} defaultDay={dayOffset(draft.date, (draft.rows[index-1]?.endAt || draft.startAt || draft.date).slice(0,10))} onChange={value=>changeRow(row.id,{startAt:value})} currentButton />
+          <DailyTimeInput label="終了の実時刻" day={draft.date} value={row.endAt} defaultDay={dayOffset(draft.date,(row.startAt || draft.rows[index-1]?.endAt || draft.startAt || draft.date).slice(0,10))} onChange={value=>changeRow(row.id,{endAt:value})} currentButton />
           {field('終了時メーター下3桁',<input inputMode="numeric" pattern="[0-9]*" maxLength={3} placeholder="例：512" value={row.meter} onChange={e=>changeRow(row.id,{meter:e.target.value,rollover:false})} />)}
           <div><p>区間距離：<strong>{summary?.distances[index] ?? '未確定'}</strong> km</p><label><input type="checkbox" checked={row.rollover} onChange={e=>changeRow(row.id,{rollover:e.target.checked})} />999→000をまたいだことを確認</label></div>
           {row.kind==='passenger' && field('乗車人数',<input inputMode="numeric" maxLength={2} value={row.passengers} onChange={e=>changeRow(row.id,{passengers:e.target.value})}/>)}
