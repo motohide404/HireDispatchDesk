@@ -146,7 +146,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
       {draft.rows.map((row,index)=><div className="daily-card" key={row.id}><div className="daily-row-heading"><h3>記録 {index+1}　{activityNames[row.kind]}</h3><div className="daily-actions">
         <button aria-label={`記録${index+1}を上へ`} disabled={index===0} onClick={()=>{const rows=[...draft.rows];[rows[index-1],rows[index]]=[rows[index],rows[index-1]];change({rows});}}>↑</button>
         <button aria-label={`記録${index+1}を下へ`} disabled={index===draft.rows.length-1} onClick={()=>{const rows=[...draft.rows];[rows[index+1],rows[index]]=[rows[index],rows[index+1]];change({rows});}}>↓</button>
-        <button onClick={()=>{if (window.confirm('この記録を入力欄から削除しますか？')) change({rows:draft.rows.filter(r=>r.id!==row.id)});}}>削除</button>
+        <button onClick={()=>{if (window.confirm('この記録を削除しますか？')) change({rows:draft.rows.filter(r=>r.id!==row.id)});}}>削除</button>
       </div></div>
         <div className="daily-grid">{field('区分',<select value={row.kind} onChange={e=>changeRow(row.id,{kind:e.target.value as Activity})}>{Object.entries(activityNames).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>)}
           {field('仕事',<input maxLength={100} value={row.jobLabel} onChange={e=>changeRow(row.id,{jobLabel:e.target.value})} />)}
