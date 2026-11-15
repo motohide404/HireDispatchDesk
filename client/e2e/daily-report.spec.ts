@@ -50,7 +50,7 @@ test('mobile driver records overnight trip, recovers draft, retries lost respons
   await expect(page.locator('.daily-page input[type=date]')).toHaveCount(1);
   await expect(page.locator('.daily-page input[type=datetime-local]')).toHaveCount(0);
   await expect(page.getByRole('combobox',{name:'営業所',exact:true})).toHaveValue('見本営業所');
-  await page.getByRole('combobox',{name:'営業所',exact:true}).selectOption('見本営業所');
+  await page.getByRole('combobox',{name:'営業所',exact:true}).selectOption('narita');
   await expect(page.getByRole('combobox',{name:'勤務開始（任意）の日付',exact:true})).toHaveCount(0);
   await expect(page.getByRole('combobox',{name:'勤務終了（任意）の日付',exact:true})).toHaveCount(0);
   await page.getByLabel('勤務終了（任意）',{exact:true}).fill('01:30');
@@ -78,7 +78,7 @@ test('mobile driver records overnight trip, recovers draft, retries lost respons
   await page.getByRole('button',{name:'下書き保存',exact:true}).click();
   await expect(page.getByText('下書きをサーバーに保存しました。')).toBeVisible();
   expect(state.records).toHaveLength(1);
-  expect(state.records[0].office).toBe('見本営業所');
+  expect(state.records[0].office).toBe('narita');
   expect(state.records[0].dutyStart).toBe('2030-01-01T23:00');
   expect(state.records[0].dutyEnd).toBe('2030-01-02T01:30');
   expect(state.records[0].startAt).toBe('2030-01-01T23:30');

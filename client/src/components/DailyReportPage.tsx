@@ -76,7 +76,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
       const vehicle = original ? { id: original.vehicleId, plateNo: original.vehiclePlate } : vehicles.find(v => v.id === Number(vehicleId));
       if (!vehicle) throw new Error('新しい日報を作る車両を選んでください。');
       const identifier = uuid();
-      const created: DailyReport = { id: identifier, reportId: identifier, version: 0, date, driverId: driver.id, driverName: driver.name, vehicleId: vehicle.id, vehiclePlate: vehicle.plateNo, office: settings.profile?.officeName ?? '', status: 'draft', reason: '', savedAt: '', startAt: '', startPlace: settings.profile?.depotPlace ?? '', startOdometer: '', dutyStart: '', dutyEnd: '', notes: '', rows: [] };
+      const created: DailyReport = { id: identifier, reportId: identifier, version: 0, date, driverId: driver.id, driverName: driver.name, vehicleId: vehicle.id, vehiclePlate: vehicle.plateNo, office: settings.profile?.officeName || driver.officeId || '', status: 'draft', reason: '', savedAt: '', startAt: '', startPlace: settings.profile?.depotPlace ?? '', startOdometer: '', dutyStart: '', dutyEnd: '', notes: '', rows: [] };
       let local: DailyReport | null = null;
       try { const raw = localStorage.getItem(cacheKey(date, driver.id)); if (raw) local = JSON.parse(raw); } catch { /* Server copy remains available. */ }
       const restorable = local && local.date === date && local.driverId === driver.id && Array.isArray(local.rows) && ((!original && local.version === 0) || (original && local.id === original.id && local.version === original.version));
@@ -113,7 +113,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
     finally { lock.current = false; setBusy(false); }
   }
   function preparePrint(blank: boolean) { if (draft) { setPrint({ report: draft, blank }); } }
-  const officeOptions = Array.from(new Set([profileOffice, ...staff.filter(member=>member.active).map(member=>member.officeName), draft?.office ?? ''].filter(name=>name.trim())));
+  const officeOptions = Array.from(new Set([profileOffice, ...staff.filter(member=>member.active).map(member=>member.officeName), ...drivers.map(driver=>driver.officeId), draft?.office ?? ''].filter(name=>name.trim())));
   const summary = draft ? meterSummary(draft) : null;
   return <section className="daily-page"><h2>乗務日報</h2><p className="daily-muted">乗務員と運行日を選択して入力します。記録は必要なだけ追加できます。</p>
     <div className="daily-grid">
