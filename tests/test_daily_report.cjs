@@ -35,3 +35,13 @@ test('time-only entries reuse the service date across month, year and leap-day b
  assert.equal(timeOnDay('2030-01-01','',1),'');
  assert.equal(dayOffset('2030-12-31','2031-01-01'),1);
 });
+
+test('duty ending accepts normal and extended clocks without a next-day selector',()=>{
+ const {dutyEndTime}=require('../client/src/lib/dailyReport.ts');
+ const day='2030-12-31',start=day+'T17:00';
+ for(const clock of ['01:30','1:30','25:30','２５：３０']) assert.equal(dutyEndTime(day,clock,start),'2031-01-01T01:30');
+ assert.equal(dutyEndTime(day,'17:30',day+'T09:00'),day+'T17:30');
+ assert.equal(dutyEndTime(day,'01:30','2031-01-01T00:30'),'2031-01-01T01:30');
+ assert.equal(dutyEndTime('2028-02-28','24:00'),'2028-02-29T00:00');
+ for(const clock of ['','12:60','48:00','-1:00','1','abc']) assert.equal(dutyEndTime(day,clock,start),'');
+});

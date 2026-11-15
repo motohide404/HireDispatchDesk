@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 import type { DriverLedgerEntry } from '../data/drivers';
 import type { VehicleLedgerVehicle } from '../data/vehicles';
 import { todayInJapan } from '../lib/ledger';
-import { activityNames, dayOffset, timeOnDay, dailyRequest, instructionRow, localDateTime, meterSummary, minutes, newDailyRow, reportError, uuid, type Activity, type DailyReport, type DailyRow } from '../lib/dailyReport';
+import { activityNames, dutyEndTime, dayOffset, timeOnDay, dailyRequest, instructionRow, localDateTime, meterSummary, minutes, newDailyRow, reportError, uuid, type Activity, type DailyReport, type DailyRow } from '../lib/dailyReport';
+import { usePersistentState } from '../lib/store';
+import { emptyStaff, type StaffMember } from '../lib/staff';
 import type { TransportDocument } from '../lib/transportDocuments';
 import DailyReportSheet from './DailyReportSheet';
 import './DailyReportPage.css';
@@ -18,7 +20,24 @@ function DailyTimeInput({ label, day, value, onChange, defaultDay = 0 }: { label
   </div>;
 }
 
+function DutyEndInput({ day, value, reference, onChange, onValidityChange }: { day: string; value: string; reference: string; onChange: (value: string) => void; onValidityChange: (valid: boolean) => void }) {
+  const [text, setText] = useState(value.slice(11,16));
+  const focused = useRef(false);
+  const valid = !text.trim() || !!dutyEndTime(day, text, reference);
+  useEffect(() => { if (!focused.current) setText(value.slice(11,16)); }, [value]);
+  return <label>勤務終了（任意）<input aria-label="勤務終了（任意）" type="text" placeholder="例：01:30 または 25:30" maxLength={5} value={text} aria-invalid={!valid}
+    onFocus={()=>{focused.current=true;}}
+    onChange={e=>{const next=e.target.value;setText(next);const parsed=dutyEndTime(day,next,reference);onValidityChange(!next.trim() || !!parsed);onChange(parsed);}}
+    onBlur={()=>{focused.current=false;if(valid && value)setText(value.slice(11,16));}} />
+    {!valid && <span role="alert">時刻を01:30または25:30の形式で入力してください。</span>}
+  </label>;
+}
+
 export default function DailyReportPage({ drivers, vehicles }: { drivers: DriverLedgerEntry[]; vehicles: VehicleLedgerVehicle[] }) {
+  const [staff] = usePersistentState<StaffMember[]>('staffMembers', emptyStaff);
+  const [profileOffice, setProfileOffice] = useState('');
+  const [opened, setOpened] = useState(0);
+  const [dutyEndValid, setDutyEndValid] = useState(true);
   const [date, setDate] = useState(todayInJapan);
   const [driverId, setDriverId] = useState('');
   const [vehicleId, setVehicleId] = useState('');
@@ -51,6 +70,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
         dailyRequest(`?date=${date}&driverId=${driverId}`), dailyRequest(`/instructions?date=${date}&driverId=${driverId}`),
         fetch('/api/transport-documents/settings', { credentials: 'same-origin' }).then(async r => { if (!r.ok) throw new Error('営業所の設定を取得できません。'); return r.json(); })
       ]);
+      setProfileOffice(settings.profile?.officeName ?? ''); setDutyEndValid(true); setOpened(n=>n+1);
       const original: DailyReport | null = result.record;
       const driver = drivers.find(d => d.id === Number(driverId))!;
       const vehicle = original ? { id: original.vehicleId, plateNo: original.vehiclePlate } : vehicles.find(v => v.id === Number(vehicleId));
@@ -76,6 +96,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
   }
   async function save(status: 'draft' | 'submitted') {
     if (!draft || lock.current) return;
+    if (!dutyEndValid) { setError('勤務終了の時刻を確認してください。'); return; }
     const issue = reportError(draft, status === 'submitted');
     if (issue) { setError(issue); return; }
     if (saved?.status === 'submitted' && !draft.reason.trim()) { setError('提出済み日報の訂正理由を入力してください。'); return; }
@@ -92,6 +113,7 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
     finally { lock.current = false; setBusy(false); }
   }
   function preparePrint(blank: boolean) { if (draft) { setPrint({ report: draft, blank }); } }
+  const officeOptions = Array.from(new Set([profileOffice, ...staff.filter(member=>member.active).map(member=>member.officeName), draft?.office ?? ''].filter(name=>name.trim())));
   const summary = draft ? meterSummary(draft) : null;
   return <section className="daily-page"><h2>乗務日報</h2><p className="daily-muted">乗務員と運行日を選択して入力します。記録は必要なだけ追加できます。</p>
     <div className="daily-grid">
@@ -103,10 +125,14 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
     {error && <p role="alert" className="daily-message daily-error">{error}</p>}{notice && <p role="status" className="daily-message">{notice}</p>}
     {draft && <fieldset disabled={busy}><div className="daily-card"><h3>{draft.date} / {draft.driverName}</h3><p>{draft.vehiclePlate}　{saved ? `第${saved.version}版・${saved.status === 'submitted' ? '提出済み' : '下書き'}` : '新規'}</p>
       <div className="daily-grid">
-        {field('営業所',<input maxLength={100} value={draft.office} onChange={e=>change({office:e.target.value})} />)}
+        {field('営業所',<select value={draft.office} onChange={e=>change({office:e.target.value})}><option value="">選択してください</option>{officeOptions.map(name=><option key={name} value={name}>{name}</option>)}</select>)}
         {field('出庫地点',<input maxLength={100} value={draft.startPlace} onChange={e=>change({startPlace:e.target.value})} />)}
-        <DailyTimeInput key={`${draft.reportId}-dutyStart`} label="勤務開始（任意）" day={draft.date} value={draft.dutyStart} onChange={value=>change({dutyStart:value})} />
-        <DailyTimeInput key={`${draft.reportId}-dutyEnd`} label="勤務終了（任意）" day={draft.date} value={draft.dutyEnd} defaultDay={dayOffset(draft.date, draft.rows[draft.rows.length-1]?.endAt.slice(0,10) || draft.date)} onChange={value=>change({dutyEnd:value})} />
+        {field('勤務開始（任意）',<input aria-label="勤務開始（任意）" type="time" step="60" value={draft.dutyStart.slice(11,16)} onChange={e=>{
+          const dutyStart=timeOnDay(draft.date,e.target.value);
+          change({dutyStart, dutyEnd:draft.dutyEnd ? dutyEndTime(draft.date,draft.dutyEnd.slice(11,16),dutyStart || draft.startAt) : ''});
+        }} />)}
+        <DutyEndInput key={`${draft.reportId}-${opened}-dutyEnd`} day={draft.date} value={draft.dutyEnd} reference={draft.dutyStart || draft.startAt || draft.rows[draft.rows.length-1]?.endAt || ''} onValidityChange={setDutyEndValid} onChange={value=>change({dutyEnd:value})} />
+        <p className="daily-wide daily-muted">勤務終了は01:30・25:30のどちらでも入力できます。開始より早い時刻は翌日として扱います。</p>
       </div></div>
       <div className="daily-card"><h3>開始時の記録</h3><p className="daily-muted">時刻だけを入力してください。日をまたぐときは「翌日」を選びます。</p><p className="daily-muted">以降はメーター下3桁だけを入力します。1区間が1000km以上になる場合は中間地点の記録を追加してください。</p><div className="daily-grid">
         <DailyTimeInput key={`${draft.reportId}-startAt`} label="出庫の実時刻" day={draft.date} value={draft.startAt} onChange={value=>change({startAt:value})} />
