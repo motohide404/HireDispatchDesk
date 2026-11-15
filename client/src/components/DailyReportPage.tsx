@@ -108,11 +108,11 @@ export default function DailyReportPage({ drivers, vehicles }: { drivers: Driver
       <div className="daily-grid">
         {field('営業所',<input maxLength={100} value={draft.office} onChange={e=>change({office:e.target.value})} />)}
         {field('出庫地点',<input maxLength={100} value={draft.startPlace} onChange={e=>change({startPlace:e.target.value})} />)}
-        <DailyTimeInput label="勤務開始（任意）" day={draft.date} value={draft.dutyStart} onChange={value=>change({dutyStart:value})} />
-        <DailyTimeInput label="勤務終了（任意）" day={draft.date} value={draft.dutyEnd} defaultDay={dayOffset(draft.date, draft.rows[draft.rows.length-1]?.endAt.slice(0,10) || draft.date)} onChange={value=>change({dutyEnd:value})} />
+        <DailyTimeInput key={`${draft.reportId}-dutyStart`} label="勤務開始（任意）" day={draft.date} value={draft.dutyStart} onChange={value=>change({dutyStart:value})} />
+        <DailyTimeInput key={`${draft.reportId}-dutyEnd`} label="勤務終了（任意）" day={draft.date} value={draft.dutyEnd} defaultDay={dayOffset(draft.date, draft.rows[draft.rows.length-1]?.endAt.slice(0,10) || draft.date)} onChange={value=>change({dutyEnd:value})} />
       </div></div>
       <div className="daily-card"><h3>開始時の記録</h3><p className="daily-muted">時刻だけを入力してください。日をまたぐときは「翌日」を選びます。</p><p className="daily-muted">以降はメーター下3桁だけを入力します。1区間が1000km以上になる場合は中間地点の記録を追加してください。</p><div className="daily-grid">
-        <DailyTimeInput label="出庫の実時刻" day={draft.date} value={draft.startAt} onChange={value=>change({startAt:value})} currentButton />
+        <DailyTimeInput key={`${draft.reportId}-startAt`} label="出庫の実時刻" day={draft.date} value={draft.startAt} onChange={value=>change({startAt:value})} currentButton />
         {field('出庫メーター（積算km・最初だけ全桁）',<input inputMode="numeric" pattern="[0-9]*" maxLength={7} placeholder="例：12500" value={draft.startOdometer} onChange={e=>change({startOdometer:e.target.value})} />)}
         <p>開始時の下3桁：<strong>{draft.startOdometer ? String(Number(draft.startOdometer)%1000).padStart(3,'0') : '未入力'}</strong></p>
       </div></div>
