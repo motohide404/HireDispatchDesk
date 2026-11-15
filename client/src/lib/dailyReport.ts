@@ -58,6 +58,7 @@ export function reportError(report: DailyReport, submitted = false) {
   if (!report.driverId || !report.vehicleId) return '乗務員と車両を選んでください。';
   if (report.rows.length > 1000) return '明細は1000件以内にしてください。';
   if (!submitted) return '';
+  if (!report.dutyStart || !report.dutyEnd) return '勤務開始・勤務終了を入力してください。';
   if (!report.startPlace.trim() || !report.startAt || !/^\d{1,7}$/.test(report.startOdometer)) return '出庫地点・実時刻・積算メーターを入力してください。';
   if (!report.rows.length) return '運行明細を入力してください。';
   let previous = report.startAt;

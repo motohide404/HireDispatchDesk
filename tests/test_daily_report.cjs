@@ -45,3 +45,12 @@ test('duty ending accepts normal and extended clocks without a next-day selector
  assert.equal(dutyEndTime('2028-02-28','24:00'),'2028-02-29T00:00');
  for(const clock of ['','12:60','48:00','-1:00','1','abc']) assert.equal(dutyEndTime(day,clock,start),'');
 });
+
+test('both duty times are required for submission while an unfinished draft remains savable',()=>{
+ const base={driverId:1,vehicleId:1,rows:[],dutyStart:'2030-01-01T09:00',dutyEnd:'2030-01-01T17:00'};
+ for(const missing of ['dutyStart','dutyEnd']){
+  const report={...base,[missing]:''};
+  assert.equal(reportError(report,true),'勤務開始・勤務終了を入力してください。');
+  assert.equal(reportError(report,false),'');
+ }
+});

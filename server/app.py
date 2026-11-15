@@ -814,6 +814,8 @@ def validate_daily_report(row, workspace, original=None):
     if not isinstance(row['startOdometer'], str) or (row['startOdometer'] and not re.fullmatch(r'\d{1,7}', row['startOdometer'])):
         raise ValueError('出庫メーターは積算kmを入力してください。')
     submitted = row['status'] == 'submitted'
+    if submitted and (not row['dutyStart'] or not row['dutyEnd']):
+        raise ValueError('勤務開始・勤務終了を入力してください。')
     if submitted and (not row['startAt'] or not row['startOdometer'] or not row['startPlace'].strip() or not row['rows'] or row['startAt'][:10] != row['date']):
         raise ValueError('出庫の日時・地点・積算kmと運行明細を確認してください。')
     previous_time = daily_time(row['startAt']) if row['startAt'] else None
